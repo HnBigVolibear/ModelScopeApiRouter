@@ -2,10 +2,6 @@
 
 <div align="center">
 
-<img src="./logo.jpg" width="200" alt="ModelScope Router Logo">
-
-<br>
-
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.95%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
