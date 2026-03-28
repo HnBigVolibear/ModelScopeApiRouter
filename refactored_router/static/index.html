@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ModelScope 智能路由</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { text-align: center; color: white; margin-bottom: 30px; }
+        .header h1 { font-size: 2rem; margin-bottom: 8px; }
+        .card {
+            background: white; border-radius: 12px; padding: 20px;
+            margin-bottom: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        .card h2 {
+            color: #333; margin-bottom: 15px; font-size: 1.1rem;
+            border-bottom: 2px solid #667eea; padding-bottom: 8px;
+        }
+        .form-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+        .form-group { flex: 1; min-width: 180px; }
+        .form-group label {
+            display: block; margin-bottom: 5px; color: #555; font-size: 0.85rem;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%; padding: 10px; border: 2px solid #e0e0e0;
+            border-radius: 8px; font-size: 0.9rem; font-family: inherit;
+        }
+        .form-group textarea { min-height: 120px; resize: vertical; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none; border-color: #667eea;
+        }
+        .btn {
+            padding: 10px 20px; border: none; border-radius: 8px;
+            font-size: 0.9rem; cursor: pointer; font-weight: 600;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;
+        }
+        .btn-primary:hover { transform: translateY(-1px); }
+        .btn-danger {
+            background: #ff4757; color: white; padding: 6px 12px; font-size: 0.8rem;
+        }
+        .btn-secondary {
+            background: #f0f0f0; color: #333; padding: 6px 12px; font-size: 0.8rem;
+        }
+        .btn-small { padding: 6px 12px; font-size: 0.8rem; }
+        .btn-icon {
+            width: 28px; height: 28px; padding: 0; display: inline-flex;
+            align-items: center; justify-content: center; font-size: 1rem;
+        }
+        
+        .status-bar {
+            display: flex; gap: 15px; align-items: center; flex-wrap: wrap; justify-content: center;
+        }
+        .status-item {
+            padding: 8px 15px; background: rgba(255,255,255,0.2);
+            border-radius: 20px; color: white; font-size: 0.9rem;
+        }
+        
+        .key-list, .model-list { list-style: none; }
+        .key-item, .model-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px; background: #f8f9fa; border-radius: 8px;
+            margin-bottom: 8px; border-left: 3px solid #667eea;
+        }
+        .key-info, .model-info { flex: 1; }
+        .key-name, .model-name { font-weight: 600; color: #333; margin-bottom: 4px; }
+        .key-meta, .model-meta {
+            font-size: 0.8rem; color: #666;
+        }
+        .model-actions { display: flex; gap: 5px; align-items: center; }
+        .quota-bar {
+            margin-top: 6px; height: 6px; background: #e0e0e0;
+            border-radius: 3px; overflow: hidden;
+        }
+        .quota-fill {
+            height: 100%; background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 3px;
+        }
+        
+        .category-section { margin-bottom: 20px; }
+        .category-title {
+            font-size: 0.95rem; color: #667eea; font-weight: 600;
+            margin-bottom: 10px; padding-left: 5px;
+        }
+        
+        .empty-state {
+            text-align: center; padding: 30px; color: #999; font-size: 0.9rem;
+        }
+        
+        .tabs {
+            display: flex; gap: 5px; margin-bottom: 15px; flex-wrap: wrap;
+        }
+        .tab {
+            padding: 10px 18px; background: #f0f0f0; border: none;
+            border-radius: 8px; cursor: pointer; font-size: 0.9rem;
+        }
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        .code-block {
+            background: #1e1e1e; color: #d4d4d4; padding: 15px;
+            border-radius: 8px; overflow-x: auto; font-family: 'Consolas', monospace;
+            font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap;
+        }
+        .example-section { margin-bottom: 20px; }
+        .example-label {
+            display: inline-block; padding: 4px 10px; background: #e0e7ff;
+            color: #3730a3; border-radius: 12px; font-size: 0.75rem;
+            margin-bottom: 8px; font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 ModelScope 智能路由</h1>
+            <div class="status-bar">
+                <span class="status-item" id="status-running">● 运行中</span>
+                <span class="status-item" id="key-count">API Keys: 0</span>
+                <span class="status-item" id="model-count">模型数: 0</span>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('keys')">🔑 API Keys</button>
+            <button class="tab" onclick="showTab('models')">🤖 模型管理</button>
+            <button class="tab" onclick="showTab('examples')">📚 调用说明</button>
+        </div>
+
+        <div id="tab-keys" class="tab-content active">
+            <div class="card">
+                <h2>➕ 添加 API Key</h2>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Key 名称</label>
+                        <input type="text" id="key-name" placeholder="例如：Key 1">
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input type="text" id="key-value" placeholder="输入 ModelScope API Key">
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="addKey()">添加</button>
+            </div>
+
+            <div class="card">
+                <h2>📋 API Key 列表</h2>
+                <ul id="key-list" class="key-list">
+                    <li class="empty-state">还没有添加 API Key</li>
+                </ul>
+            </div>
+        </div>
+
+        <div id="tab-models" class="tab-content">
+            <div class="card">
+                <h2>➕ 添加模型</h2>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>模型名称</label>
+                        <input type="text" id="model-name" placeholder="例如：deepseek-v3">
+                    </div>
+                    <div class="form-group">
+                        <label>分类</label>
+                        <select id="model-category">
+                            <option value="chat">对话</option>
+                            <option value="vision">视觉理解</option>
+                            <option value="text2img">文生图</option>
+                            <option value="img2img">图生图</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex: 2;">
+                        <label>Model ID</label>
+                        <input type="text" id="model-id" placeholder="例如：deepseek-ai/DeepSeek-V3">
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="addModel()">添加</button>
+            </div>
+
+            <div class="card">
+                <h2>📋 模型列表</h2>
+                <div class="form-row" style="margin-bottom: 15px;">
+                    <div class="form-group" style="max-width: 250px;">
+                        <label>筛选分类</label>
+                        <select id="filter-category" onchange="loadData()">
+                            <option value="all">全部</option>
+                            <option value="chat">对话</option>
+                            <option value="vision">视觉理解</option>
+                            <option value="text2img">文生图</option>
+                            <option value="img2img">图生图</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="model-list"></div>
+            </div>
+        </div>
+
+        <div id="tab-examples" class="tab-content">
+            <div class="card">
+                <h2>📚 调用示例</h2>
+                <div style="margin-bottom:20px;padding:15px;background:#e8f5e9;border-radius:8px;">
+                    <p style="color:#2e7d32;font-weight:600;margin-bottom:8px;">✅ 超级简单！只需改 1 个参数</p>
+                    <ul style="color:#2e7d32;margin-left:20px;font-size:0.9rem;">
+                        <li><strong>Base URL:</strong> <code>http://localhost:8080/v1</code></li>
+                        <li><strong>API Key:</strong> <code>multi-proxy-2025-2000q</code>（任意值都可以）</li>
+                        <li><strong>Model 参数：</strong>4 选 1：<code>chat</code> / <code>txt2img</code> / <code>img2img</code> / <code>vision</code></li>
+                    </ul>
+                </div>
+                <div class="form-row" style="margin-bottom: 20px;">
+                    <div class="form-group" style="max-width: 300px;">
+                        <label>选择类型</label>
+                        <select id="example-category" onchange="loadExamples()">
+                            <option value="chat">对话 (chat)</option>
+                            <option value="vision">视觉理解 (vision)</option>
+                            <option value="txt2img">文生图 (txt2img)</option>
+                            <option value="img2img">图生图 (img2img)</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="examples-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let categories = {};
+        let examples = {};
+        
+        function showTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('tab-' + tabName).classList.add('active');
+            
+            if (tabName === 'examples') {
+                loadExamples();
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function maskKey(key) {
+            if (key.length <= 8) return key;
+            return key.substring(0, 4) + '...' + key.substring(key.length - 4);
+        }
+        
+        async function loadData() {
+            try {
+                const keysRes = await fetch('/api/keys');
+                const keysData = await keysRes.json();
+                renderKeys(keysData.keys);
+                
+                const modelsRes = await fetch('/api/models');
+                const modelsData = await modelsRes.json();
+                categories = modelsData.categories;
+                renderModels(modelsData.models_by_category);
+                
+                document.getElementById('key-count').textContent = `API Keys: ${keysData.keys.length}`;
+                document.getElementById('model-count').textContent = `模型数: ${modelsData.models.length}`;
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        
+        function renderKeys(keys) {
+            const list = document.getElementById('key-list');
+            if (keys.length === 0) {
+                list.innerHTML = '<li class="empty-state">还没有添加 API Key</li>';
+                return;
+            }
+            
+            list.innerHTML = keys.map(key => {
+                let quotaHtml = '';
+                if (key.quota) {
+                    const dailyUsed = key.quota.daily_limit - key.quota.daily_remaining;
+                    const dailyPercent = ((dailyUsed / key.quota.daily_limit) * 100).toFixed(1);
+                    quotaHtml = `
+                        <div class="key-meta">每日: ${dailyUsed} / ${key.quota.daily_limit}</div>
+                        <div class="quota-bar"><div class="quota-fill" style="width: ${dailyPercent}%"></div></div>
+                    `;
+                }
+                return `
+                    <li class="key-item">
+                        <div class="key-info">
+                            <div class="key-name">${escapeHtml(key.name)}</div>
+                            <div class="key-meta">${maskKey(key.key)}</div>
+                            ${quotaHtml}
+                        </div>
+                        <button class="btn btn-danger" onclick="deleteKey('${key.id}')">删除</button>
+                    </li>
+                `;
+            }).join('');
+        }
+        
+        function renderModels(modelsByCategory) {
+            const list = document.getElementById('model-list');
+            const filterCat = document.getElementById('filter-category').value;
+            let html = '';
+            
+            for (const [catId, catName] of Object.entries(categories)) {
+                const models = modelsByCategory[catId] || [];
+                if (models.length === 0) continue;
+                if (filterCat !== 'all' && filterCat !== catId) continue;
+                
+                html += `
+                    <div class="category-section">
+                        <div class="category-title">${catName} <span style="font-weight:normal;color:#999;">(顺序 = 优先级)</span></div>
+                        <ul class="model-list">
+                            ${models.map((model, idx) => `
+                                <li class="model-item">
+                                    <div class="model-info">
+                                        <div class="model-name">${escapeHtml(model.name)} <span style="font-weight:normal;color:#999;font-size:0.8rem;">#${idx + 1}</span></div>
+                                        <div class="model-meta">${escapeHtml(model.model_id)}</div>
+                                    </div>
+                                    <div class="model-actions">
+                                        <button class="btn btn-secondary btn-icon" onclick="moveModel('${model.id}', 'up')" title="上移">↑</button>
+                                        <button class="btn btn-secondary btn-icon" onclick="moveModel('${model.id}', 'down')" title="下移">↓</button>
+                                        <button class="btn btn-danger btn-small" onclick="deleteModel('${model.id}')">删除</button>
+                                    </div>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            if (!html) {
+                html = '<div class="empty-state">还没有添加模型</div>';
+            }
+            
+            list.innerHTML = html;
+        }
+        
+        async function loadExamples() {
+            try {
+                const res = await fetch('/api/examples');
+                const data = await res.json();
+                examples = data.examples;
+                renderExamples();
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        
+        function renderExamples() {
+            const cat = document.getElementById('example-category').value;
+            const ex = examples[cat];
+            const container = document.getElementById('examples-content');
+            
+            if (!ex) {
+                container.innerHTML = '<div class="empty-state">暂无示例</div>';
+                return;
+            }
+            
+            container.innerHTML = `
+                <div class="example-section">
+                    <p style="color:#555;margin-bottom:15px;">${ex.description}</p>
+                    
+                    <div class="example-label">cURL</div>
+                    <div class="code-block">${escapeHtml(ex.curl)}</div>
+                    
+                    <div style="height:15px;"></div>
+                    
+                    <div class="example-label">Python (OpenAI SDK)</div>
+                    <div class="code-block">${escapeHtml(ex.python)}</div>
+                    
+                    ${ex.openai && !ex.openai.note ? `
+                    <div style="height:15px;"></div>
+                    <div class="example-label">OpenAI 配置</div>
+                    <div class="code-block">Base URL: ${ex.openai.base_url}
+API Key: ${ex.openai.api_key}
+Model: ${ex.openai.model}</div>
+                    ` : ''}
+                    
+                    ${ex.openai && ex.openai.note ? `
+                    <div style="margin-top:15px;padding:12px;background:#fff3cd;border-radius:8px;color:#856404;">
+                        ⚠️ ${ex.openai.note}
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+        
+        async function addKey() {
+            const name = document.getElementById('key-name').value;
+            const key = document.getElementById('key-value').value;
+            if (!name || !key) return;
+            
+            try {
+                const res = await fetch('/api/keys', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, key })
+                });
+                if (res.ok) {
+                    document.getElementById('key-name').value = '';
+                    document.getElementById('key-value').value = '';
+                    loadData();
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        
+        async function deleteKey(id) {
+            if (!confirm('确定删除这个 API Key？')) return;
+            try {
+                await fetch(`/api/keys/${id}`, { method: 'DELETE' });
+                loadData();
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        
+        async function addModel() {
+            const name = document.getElementById('model-name').value;
+            const modelId = document.getElementById('model-id').value;
+            const category = document.getElementById('model-category').value;
+            
+            if (!name || !modelId) return;
+            
+            try {
+                const res = await fetch('/api/models', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, model_id: modelId, category })
+                });
+                if (res.ok) {
+                    document.getElementById('model-name').value = '';
+                    document.getElementById('model-id').value = '';
+                    loadData();
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        
+        async function deleteModel(id) {
+            if (!confirm('确定删除这个模型？')) return;
+            try {
+                await fetch(`/api/models/${id}`, { method: 'DELETE' });
+                loadData();
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        
+        async function moveModel(id, direction) {
+            try {
+                const res = await fetch(`/api/models/${id}/move`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ direction })
+                });
+                if (res.ok) {
+                    loadData();
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        
+        loadData();
+        setInterval(loadData, 15000);
+    </script>
+</body>
+</html>

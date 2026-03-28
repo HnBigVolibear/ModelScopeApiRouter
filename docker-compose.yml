@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  modelscope-router:
+    build: .
+    container_name: modelscope-router
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    volumes:
+      - ./router_data:/app/refactored_router/router_data

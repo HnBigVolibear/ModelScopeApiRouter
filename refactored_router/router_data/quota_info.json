@@ -1,0 +1,35 @@
+{
+  "bd2ff988-322d-4d64-8ed1-6bdcd53595d7": {
+    "daily_limit": 2000,
+    "daily_remaining": 1981,
+    "model_limit": 500,
+    "model_remaining": 496,
+    "updated_at": 1774702202.2266917
+  },
+  "861e701b-4e4d-4296-ad5c-7f34ce38078d": {
+    "daily_limit": 2000,
+    "daily_remaining": 1980,
+    "model_limit": 500,
+    "model_remaining": 497,
+    "updated_at": 1774702202.9938262
+  },
+  "21d965df-4e94-4b48-8ea9-59f38a889546": {
+    "daily_limit": 2000,
+    "daily_remaining": 1979,
+    "model_limit": 20,
+    "model_remaining": 17,
+    "updated_at": 1774702209.6079767
+  },
+  "key-1": {
+    "updated_at": 1774714300.680289
+  },
+  "key-2": {
+    "updated_at": 1774714295.4862297
+  },
+  "key-3": {
+    "updated_at": 1774714296.3092766
+  },
+  "key-4": {
+    "updated_at": 1774714297.137612
+  }
+}
