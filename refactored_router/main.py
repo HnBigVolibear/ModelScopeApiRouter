@@ -150,8 +150,7 @@ print(response.choices[0].message.content)""",
         "role": "user",
         "content": [
           {"type": "text", "text": "这张图片里有什么？"},
-          {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}},
-          {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
+          {"type": "image_url", "image_url": {"url": "https://qcloud.dpfile.com/pc/d6A1POwDkj8vKTNgbAZswnAaIM2fuXnejIO0X7lJQb9NIYslSlGEPeQVyA4hZRCP.jpg"}}
         ]
       }
     ]
@@ -163,36 +162,19 @@ client = openai.OpenAI(
     api_key="multi-proxy-2025-2000q"
 )
 
-# ============ 单图示例 ============
-response_single = client.chat.completions.create(
+response = client.chat.completions.create(
     model="vision",
     messages=[
         {
             "role": "user",
             "content": [
                 {"type": "text", "text": "这张图片里有什么？"},
-                {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
+                {"type": "image_url", "image_url": {"url": "https://qcloud.dpfile.com/pc/d6A1POwDkj8vKTNgbAZswnAaIM2fuXnejIO0X7lJQb9NIYslSlGEPeQVyA4hZRCP.jpg"}}
             ]
         }
     ]
 )
-print("单图结果:", response_single.choices[0].message.content)
-
-# ============ 多图示例 ============
-response_multi = client.chat.completions.create(
-    model="vision",
-    messages=[
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "对比这两张图片有什么不同？"},
-                {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}},
-                {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
-            ]
-        }
-    ]
-)
-print("多图结果:", response_multi.choices[0].message.content)""",
+print(response.choices[0].message.content)""",
             "openai": {
                 "base_url": "http://localhost:2166/v1",
                 "api_key": "multi-proxy-2025-2000q",
@@ -241,7 +223,7 @@ print(response)""",
         "role": "user",
         "content": [
           {"type": "text", "text": "优化这张图片，让它更清晰"},
-          {"type": "image_url", "image_url": {"url": "https://example.com/input.jpg"}}
+          {"type": "image_url", "image_url": {"url": "https://qcloud.dpfile.com/pc/d6A1POwDkj8vKTNgbAZswnAaIM2fuXnejIO0X7lJQb9NIYslSlGEPeQVyA4hZRCP.jpg"}}
         ]
       }
     ]
@@ -253,36 +235,19 @@ client = openai.OpenAI(
     api_key="multi-proxy-2025-2000q"
 )
 
-# ============ 单图示例 ============
-response_single = client.chat.completions.create(
+response = client.chat.completions.create(
     model="img2img",
     messages=[
         {
             "role": "user",
             "content": [
                 {"type": "text", "text": "优化这张图片，让它更清晰"},
-                {"type": "image_url", "image_url": {"url": "https://example.com/input.jpg"}}
+                {"type": "image_url", "image_url": {"url": "https://qcloud.dpfile.com/pc/d6A1POwDkj8vKTNgbAZswnAaIM2fuXnejIO0X7lJQb9NIYslSlGEPeQVyA4hZRCP.jpg"}}
             ]
         }
     ]
 )
-print("单图结果:", response_single)
-
-# ============ 多图示例 ============
-response_multi = client.chat.completions.create(
-    model="img2img",
-    messages=[
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "融合这两张图片的风格"},
-                {"type": "image_url", "image_url": {"url": "https://example.com/input1.jpg"}},
-                {"type": "image_url", "image_url": {"url": "https://example.com/input2.jpg"}}
-            ]
-        }
-    ]
-)
-print("多图结果:", response_multi)""",
+print(response)""",
             "openai": {
                 "base_url": "http://localhost:2166/v1",
                 "api_key": "multi-proxy-2025-2000q",

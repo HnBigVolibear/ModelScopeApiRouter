@@ -1,0 +1,50 @@
+import requests
+import json
+
+# 测试文生图功能
+url = "http://localhost:2166/v1/chat/completions"
+
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer test-key"
+}
+
+data = {
+    "model": "txt2img",
+    "messages": [
+        {"role": "user", "content": "一只可爱的猫咪"}
+    ]
+}
+
+print("正在发送文生图请求...")
+print()
+
+try:
+    response = requests.post(url, headers=headers, json=data, timeout=120)
+    print(f"状态码: {response.status_code}")
+    print()
+    
+    if response.status_code == 200:
+        result = response.json()
+        print("响应内容:")
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        print()
+        
+        # 检查是否有图片链接
+        if "image_url" in result:
+            print(f"✅ 成功获取图片链接: {result['image_url']}")
+        elif "images" in result and len(result["images"]) > 0:
+            print(f"✅ 成功获取图片链接: {result['images'][0]}")
+        elif "choices" in result and len(result["choices"]) > 0:
+            content = result["choices"][0]["message"].get("content", "")
+            if content.startswith("http"):
+                print(f"✅ 成功获取图片链接: {content}")
+            else:
+                print("⚠️  返回内容不是图片链接")
+        else:
+            print("❌ 未找到图片链接")
+    else:
+        print(f"请求失败: {response.text}")
+        
+except Exception as e:
+    print(f"发生错误: {e}")
