@@ -122,6 +122,39 @@ curl http://localhost:2166/v1/chat/completions \
     "messages": [{"role": "user", "content": "一只可爱的猫咪"}]
   }'
 ```
+**技术实现：**
+- 采用 ModelScope 异步模式（`X-ModelScope-Async-Mode: "true"`）
+- 自动获取 `task_id` 并轮询任务状态（最多 30 次，每 2 秒一次）
+- 任务查询 API: `https://api-inference.modelscope.cn/v1/tasks/{task_id}`
+- 从 `output_images` 数组中提取图片链接
+
+**响应说明：**
+- `choices[0].message.content`: 图片 URL
+- `image_url`: 图片 URL（直接访问字段）
+- `images`: 图片 URL 数组
+
+**图生图：**
+```bash
+curl http://localhost:2166/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "img2img",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "让这张图片更鲜艳"},
+          {"type": "image_url", "image_url": {"url": "https://qcloud.dpfile.com/pc/d6A1POwDkj8vKTNgbAZswnAaIM2fuXnejIO0X7lJQb9NIYslSlGEPeQVyA4hZRCP.jpg"}}
+        ]
+      }
+    ]
+  }'
+```
+**技术实现：**
+- 采用 ModelScope 异步模式（`X-ModelScope-Async-Mode: "true"`）
+- 自动获取 `task_id` 并轮询任务状态（最多 30 次，每 2 秒一次）
+- 任务查询 API: `https://api-inference.modelscope.cn/v1/tasks/{task_id}`
+- 从 `output_images` 数组中提取图片链接
 
 **视觉理解（单图）：**
 ```bash
@@ -164,7 +197,21 @@ response = client.chat.completions.create(
     model="txt2img",
     messages=[{"role": "user", "content": "一只可爱的猫咪"}]
 )
-print(response)
+print(f"图片链接: {response.choices[0].message.content}")
+print(f"图片链接 (直接访问): {response.image_url}")
+
+# 图生图
+response = client.chat.completions.create(
+    model="img2img",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "让这张图片更鲜艳"},
+            {"type": "image_url", "image_url": {"url": "https://qcloud.dpfile.com/pc/d6A1POwDkj8vKTNgbAZswnAaIM2fuXnejIO0X7lJQb9NIYslSlGEPeQVyA4hZRCP.jpg"}}
+        ]
+    }]
+)
+print(f"图片链接: {response.choices[0].message.content}")
 
 # 视觉理解
 response = client.chat.completions.create(

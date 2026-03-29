@@ -4,9 +4,9 @@ from rich.console import Console
 from rich.table import Table
 from rich.live import Live
 from rich import box
-from .settings import config
-from .stats import stats_service
-from .schema import CallRecord
+from settings import config
+from stats import stats_service
+from schema import CallRecord
 
 class Dashboard:
     def __init__(self):

@@ -3,8 +3,9 @@ import logging
 import json
 import base64
 import re
+import asyncio
 from typing import Tuple, Dict, List, Optional
-from .settings import config
+from settings import config
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class APIClient:
         """从响应中提取图片 URL"""
         try:
             # 尝试 OpenAI 格式：choices[0].message.content
-            if "choices" in result and result["choices"] is not None and len(result["choices"]) > 0:
+            if "choices" in result and len(result["choices"]) > 0:
                 choice = result["choices"][0]
                 if "message" in choice and "content" in choice["message"]:
                     content = choice["message"]["content"]
@@ -114,14 +115,56 @@ class APIClient:
             logger.warning(f"图片尺寸校验异常: {e}")
             return True, None
     
+    def _convert_openai_to_modelscope(self, data: dict, target_category: str) -> dict:
+        """将 OpenAI 格式的请求转换为 ModelScope 文生图/图生图格式"""
+        try:
+            modelscope_data = {}
+            
+            # 提取 prompt
+            if "messages" in data and len(data["messages"]) > 0:
+                last_message = data["messages"][-1]
+                content = last_message.get("content", "")
+                
+                if isinstance(content, str):
+                    # 文生图：简单文本
+                    modelscope_data["prompt"] = content
+                elif isinstance(content, list):
+                    # 图生图：文本 + 图片
+                    text_parts = []
+                    image_urls = []
+                    
+                    for item in content:
+                        if item.get("type") == "text":
+                            text_parts.append(item.get("text", ""))
+                        elif item.get("type") == "image_url":
+                            img_url = item.get("image_url", {}).get("url", "")
+                            if img_url:
+                                image_urls.append(img_url)
+                    
+                    if text_parts:
+                        modelscope_data["prompt"] = " ".join(text_parts)
+                    
+                    if image_urls and target_category == "img2img":
+                        modelscope_data["images"] = image_urls
+            
+            # 复制其他可能的参数
+            for key in ["width", "height", "size", "n", "quality"]:
+                if key in data:
+                    modelscope_data[key] = data[key]
+            
+            return modelscope_data
+        except Exception as e:
+            logger.warning(f"请求格式转换失败: {e}")
+            return data
+    
     def _format_image_response(self, result: dict, image_url: str, original_data: dict) -> dict:
         """格式化响应，确保包含图片链接"""
         try:
             # 构建标准的 OpenAI 兼容响应格式，同时包含图片链接
             formatted_result = result.copy()
             
-            # 如果没有 choices 或者 choices 为空/None，创建一个
-            if "choices" not in formatted_result or formatted_result["choices"] is None or len(formatted_result["choices"]) == 0:
+            # 如果没有 choices 或者 choices 为空，创建一个
+            if "choices" not in formatted_result or len(formatted_result["choices"]) == 0:
                 formatted_result["choices"] = [{
                     "index": 0,
                     "message": {
@@ -194,16 +237,28 @@ class APIClient:
                     continue
                 
                 try:
-                    # 正确的 URL 是 /chat/completions，model 放请求体里！
-                    url = f"{config.BASE_URL}/chat/completions"
-                    
-                    headers_copy = {
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {key['key']}"
-                    }
+                    # 根据请求分类确定 URL
+                    if target_category in ["text2img", "img2img"]:
+                        url = f"{config.BASE_URL}/images/generations"
+                        headers_copy = {
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {key['key']}",
+                            "X-ModelScope-Async-Mode": "true"
+                        }
+                    else:
+                        url = f"{config.BASE_URL}/chat/completions"
+                        headers_copy = {
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {key['key']}"
+                        }
                     
                     # 请求体里设置 model
                     request_data = data.copy()
+                    
+                    # 对文生图和图生图进行格式转换
+                    if target_category in ["text2img", "img2img"]:
+                        request_data = self._convert_openai_to_modelscope(request_data, target_category)
+                    
                     request_data["model"] = model["model_id"]
                     
                     logger.info(f"  使用 Key: {key['name']}")
@@ -240,12 +295,60 @@ class APIClient:
                     
                     result = response.json()
                     
-                    # 对文生图和图生图响应进行特殊处理
+                    # 对文生图和图生图响应进行特殊处理（异步模式）
                     if target_category in ["text2img", "img2img"]:
-                        image_url = self._extract_image_url(result)
-                        if image_url:
-                            result = self._format_image_response(result, image_url, data)
-                            logger.info(f"✅ 成功提取图片链接: {image_url[:50]}...")
+                        # 检查是否有 task_id（异步模式）
+                        if "task_id" in result:
+                            task_id = result["task_id"]
+                            logger.info(f"  异步任务已提交，task_id: {task_id}")
+                            
+                            # 轮询任务状态
+                            task_headers = {
+                                "Authorization": f"Bearer {key['key']}",
+                                "X-ModelScope-Task-Type": "image_generation"
+                            }
+                            
+                            max_retries = 30
+                            retry_count = 0
+                            
+                            while retry_count < max_retries:
+                                await asyncio.sleep(2)
+                                retry_count += 1
+                                
+                                async with httpx.AsyncClient() as client:
+                                    task_response = await client.get(
+                                        f"{config.BASE_URL}/tasks/{task_id}",
+                                        headers=task_headers,
+                                        timeout=timeout
+                                    )
+                                
+                                task_result = task_response.json()
+                                task_status = task_result.get("task_status")
+                                
+                                logger.info(f"  任务状态: {task_status} (尝试 {retry_count}/{max_retries})")
+                                
+                                if task_status == "SUCCEED":
+                                    # 从 output_images 中提取图片链接
+                                    if "output_images" in task_result and len(task_result["output_images"]) > 0:
+                                        image_url = task_result["output_images"][0]
+                                        result = self._format_image_response(task_result, image_url, data)
+                                        logger.info(f"✅ 成功提取图片链接: {image_url[:50]}...")
+                                        break
+                                    else:
+                                        logger.warning("任务成功但 output_images 为空")
+                                        break
+                                elif task_status == "FAILED":
+                                    logger.error(f"任务失败: {task_result}")
+                                    raise Exception(f"任务失败: {task_result.get('error_message', '未知错误')}")
+                                elif task_status not in ["PENDING", "PROCESSING"]:
+                                    logger.warning(f"未知任务状态: {task_status}")
+                                    break
+                        else:
+                            # 同步模式，直接尝试提取图片 URL
+                            image_url = self._extract_image_url(result)
+                            if image_url:
+                                result = self._format_image_response(result, image_url, data)
+                                logger.info(f"✅ 成功提取图片链接: {image_url[:50]}...")
                     
                     logger.info(f"✅ 成功！模型: {model['name']}, Key: {key['name']}")
                     return result, response.status_code, dict(response.headers)

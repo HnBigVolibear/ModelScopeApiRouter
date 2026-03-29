@@ -15,8 +15,8 @@ except AttributeError:
     pass
 # ----------------------------------
 
-from .settings import config
-from .network import api_client
+from settings import config
+from network import api_client
 
 class AddKeyRequest(BaseModel):
     name: str
@@ -203,11 +203,19 @@ response = client.chat.completions.create(
     messages=[{"role": "user", "content": "一只可爱的猫咪"}]
 )
 
-print(response)""",
+# 方式1：通过 choices 获取
+print(response.choices[0].message.content)
+
+# 方式2：通过 image_url 字段直接获取
+print(response.image_url)
+
+# 方式3：通过 images 数组获取
+print(response.images[0])""",
             "openai": {
                 "base_url": "http://localhost:2166/v1",
                 "api_key": "multi-proxy-2025-2000q",
-                "model": "txt2img"
+                "model": "txt2img",
+                "note": "技术实现：采用 ModelScope 异步模式（X-ModelScope-Async-Mode: true），自动获取 task_id 并轮询任务状态（最多 30 次，每 2 秒一次），从 output_images 数组中提取图片链接"
             }
         },
         "img2img": {
@@ -247,11 +255,20 @@ response = client.chat.completions.create(
         }
     ]
 )
-print(response)""",
+
+# 方式1：通过 choices 获取
+print(response.choices[0].message.content)
+
+# 方式2：通过 image_url 字段直接获取
+print(response.image_url)
+
+# 方式3：通过 images 数组获取
+print(response.images[0])""",
             "openai": {
                 "base_url": "http://localhost:2166/v1",
                 "api_key": "multi-proxy-2025-2000q",
-                "model": "img2img"
+                "model": "img2img",
+                "note": "技术实现：采用 ModelScope 异步模式（X-ModelScope-Async-Mode: true），自动获取 task_id 并轮询任务状态（最多 30 次，每 2 秒一次），从 output_images 数组中提取图片链接"
             }
         }
     }

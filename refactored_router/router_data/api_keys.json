@@ -1,1 +1,7 @@
-[]
+[
+  {
+    "id": "test-key-1",
+    "key": "ms-250ebfb8-b358-4e5b-bf9f-87c4baf64ea4",
+    "name": "测试 Key"
+  }
+]

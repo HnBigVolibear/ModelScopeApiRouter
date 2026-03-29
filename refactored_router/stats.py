@@ -1,8 +1,8 @@
 import json
 from datetime import date
 from typing import Dict, List
-from .settings import config
-from .schema import CallRecord
+from settings import config
+from schema import CallRecord
 
 class StatsService:
     def __init__(self):
