@@ -1,4 +1,5 @@
 import sys
+import os
 import uvicorn
 import httpx
 from pathlib import Path
@@ -6,6 +7,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+# --- 添加模块路径 ---
+current_dir = Path(__file__).parent
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
+# ------------------
 
 # --- 强制 Windows 终端使用 UTF-8 ---
 try:

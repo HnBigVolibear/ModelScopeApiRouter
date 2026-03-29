@@ -1,9 +1,18 @@
+import sys
 import threading
 import time
+from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 from rich.live import Live
 from rich import box
+
+# --- 添加模块路径 ---
+current_dir = Path(__file__).parent
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
+# ------------------
+
 from settings import config
 from stats import stats_service
 from schema import CallRecord
