@@ -100,11 +100,37 @@ class APIClient:
     def _validate_image_size(self, data: dict) -> Tuple[bool, Optional[str]]:
         """校验图片尺寸是否在合理范围内（1:3 到 3:1）"""
         try:
-            # 检查是否有 images 或 image 字段（用于 img2img）
+            # 检查 OpenAI 多模态消息里的 image_url 输入（用于 img2img）
+            if "messages" in data and isinstance(data["messages"], list):
+                for message in data["messages"]:
+                    content = message.get("content")
+                    if isinstance(content, list):
+                        for item in content:
+                            if item.get("type") == "image_url":
+                                image_obj = item.get("image_url", {})
+                                width = image_obj.get("width")
+                                height = image_obj.get("height")
+                                if width and height:
+                                    ratio = width / height
+                                    if ratio < 1/3 or ratio > 3:
+                                        return False, f"图片尺寸比例必须在 1:3 到 3:1 之间，当前比例为 {width}:{height}"
+
+            # 检查是否有 images 或 image_url 字段（用于 img2img）
             if "images" in data:
                 images = data["images"]
                 if isinstance(images, list) and len(images) > 0:
                     for img in images:
+                        if isinstance(img, dict):
+                            width = img.get("width", 1024)
+                            height = img.get("height", 1024)
+                            ratio = width / height
+                            if ratio < 1/3 or ratio > 3:
+                                return False, f"图片尺寸比例必须在 1:3 到 3:1 之间，当前比例为 {width}:{height}"
+
+            if "image_url" in data:
+                image_urls = data["image_url"]
+                if isinstance(image_urls, list) and len(image_urls) > 0:
+                    for img in image_urls:
                         if isinstance(img, dict):
                             width = img.get("width", 1024)
                             height = img.get("height", 1024)
@@ -154,7 +180,7 @@ class APIClient:
                         modelscope_data["prompt"] = " ".join(text_parts)
                     
                     if image_urls and target_category == "img2img":
-                        modelscope_data["images"] = image_urls
+                        modelscope_data["image_url"] = image_urls
             
             # 复制其他可能的参数
             for key in ["width", "height", "size", "n", "quality"]:
@@ -317,9 +343,10 @@ class APIClient:
                                 "X-ModelScope-Task-Type": "image_generation"
                             }
                             
-                            max_retries = 30
+                            max_retries = 90
                             retry_count = 0
-                            
+                            task_completed = False
+
                             while retry_count < max_retries:
                                 await asyncio.sleep(2)
                                 retry_count += 1
@@ -337,6 +364,7 @@ class APIClient:
                                 logger.info(f"  任务状态: {task_status} (尝试 {retry_count}/{max_retries})")
                                 
                                 if task_status == "SUCCEED":
+                                    task_completed = True
                                     # 从 output_images 中提取图片链接
                                     if "output_images" in task_result and len(task_result["output_images"]) > 0:
                                         image_url = task_result["output_images"][0]
@@ -345,13 +373,21 @@ class APIClient:
                                         break
                                     else:
                                         logger.warning("任务成功但 output_images 为空")
+                                        result = task_result
                                         break
                                 elif task_status == "FAILED":
+                                    task_completed = True
                                     logger.error(f"任务失败: {task_result}")
                                     raise Exception(f"任务失败: {task_result.get('error_message', '未知错误')}")
                                 elif task_status not in ["PENDING", "PROCESSING"]:
+                                    task_completed = True
                                     logger.warning(f"未知任务状态: {task_status}")
+                                    result = task_result
                                     break
+
+                            if not task_completed:
+                                logger.warning(f"任务轮询超时，返回最后一次任务结果: {task_result}")
+                                result = task_result
                         else:
                             # 同步模式，直接尝试提取图片 URL
                             image_url = self._extract_image_url(result)

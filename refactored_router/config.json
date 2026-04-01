@@ -154,16 +154,16 @@
     "order": 4
   },
   {
-    "id": "f812fe1c-9e1b-4f6e-82c3-1f94dd990b17",
-    "name": "FireRedTeam/FireRed-Image-Edit-1.1",
-    "model_id": "FireRedTeam/FireRed-Image-Edit-1.1",
+    "id": "90c86e85-35e8-47a8-acb7-6355c98e1a59",
+    "name": "Qwen/Qwen-Image-Edit-2511",
+    "model_id": "Qwen/Qwen-Image-Edit-2511",
     "category": "img2img",
     "order": 0
   },
   {
-    "id": "90c86e85-35e8-47a8-acb7-6355c98e1a59",
-    "name": "Qwen/Qwen-Image-Edit-2511",
-    "model_id": "Qwen/Qwen-Image-Edit-2511",
+    "id": "f812fe1c-9e1b-4f6e-82c3-1f94dd990b17",
+    "name": "FireRedTeam/FireRed-Image-Edit-1.1",
+    "model_id": "FireRedTeam/FireRed-Image-Edit-1.1",
     "category": "img2img",
     "order": 1
   },

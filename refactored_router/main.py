@@ -196,7 +196,7 @@ print(response.choices[0].message.content)""",
   -H "Authorization: Bearer multi-proxy-2025-2000q" \\
   -d '{
     "model": "txt2img",
-    "messages": [{"role": "user", "content": "一只可爱的猫咪"}]
+    "messages": [{"role": "user", "content": "一只可爱的猫咪，高清，柔和光线"}]
   }'""",
             "python": """import openai
 
@@ -207,22 +207,17 @@ client = openai.OpenAI(
 
 response = client.chat.completions.create(
     model="txt2img",
-    messages=[{"role": "user", "content": "一只可爱的猫咪"}]
+    messages=[{"role": "user", "content": "一只可爱的猫咪，高清，柔和光线"}]
 )
 
-# 方式1：通过 choices 获取
-print(response.choices[0].message.content)
-
-# 方式2：通过 image_url 字段直接获取
-print(response.image_url)
-
-# 方式3：通过 images 数组获取
-print(response.images[0])""",
+print(f"图片链接: {response.choices[0].message.content}")
+print(f"图片链接 (直接访问): {response.image_url}")
+print(f"图片链接 (数组): {response.images[0]}")""",
             "openai": {
                 "base_url": "http://localhost:2166/v1",
                 "api_key": "multi-proxy-2025-2000q",
                 "model": "txt2img",
-                "note": "技术实现：采用 ModelScope 异步模式（X-ModelScope-Async-Mode: true），自动获取 task_id 并轮询任务状态（最多 30 次，每 2 秒一次），从 output_images 数组中提取图片链接"
+                "note": "技术实现：采用 ModelScope 异步模式（X-ModelScope-Async-Mode: true），自动获取 task_id 并轮询任务状态（最多 90 次，每 2 秒一次），从 output_images 数组中提取图片链接"
             }
         },
         "img2img": {
@@ -237,7 +232,7 @@ print(response.images[0])""",
       {
         "role": "user",
         "content": [
-          {"type": "text", "text": "优化这张图片，让它更清晰"},
+          {"type": "text", "text": "优化这张图片，让它更清晰，颜色更自然"},
           {"type": "image_url", "image_url": {"url": "https://qcloud.dpfile.com/pc/d6A1POwDkj8vKTNgbAZswnAaIM2fuXnejIO0X7lJQb9NIYslSlGEPeQVyA4hZRCP.jpg"}}
         ]
       }
@@ -256,26 +251,21 @@ response = client.chat.completions.create(
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": "优化这张图片，让它更清晰"},
+                {"type": "text", "text": "优化这张图片，让它更清晰，颜色更自然"},
                 {"type": "image_url", "image_url": {"url": "https://qcloud.dpfile.com/pc/d6A1POwDkj8vKTNgbAZswnAaIM2fuXnejIO0X7lJQb9NIYslSlGEPeQVyA4hZRCP.jpg"}}
             ]
         }
     ]
 )
 
-# 方式1：通过 choices 获取
-print(response.choices[0].message.content)
-
-# 方式2：通过 image_url 字段直接获取
-print(response.image_url)
-
-# 方式3：通过 images 数组获取
-print(response.images[0])""",
+print(f"图片链接: {response.choices[0].message.content}")
+print(f"图片链接 (直接访问): {response.image_url}")
+print(f"图片链接 (数组): {response.images[0]}")""",
             "openai": {
                 "base_url": "http://localhost:2166/v1",
                 "api_key": "multi-proxy-2025-2000q",
                 "model": "img2img",
-                "note": "技术实现：采用 ModelScope 异步模式（X-ModelScope-Async-Mode: true），自动获取 task_id 并轮询任务状态（最多 30 次，每 2 秒一次），从 output_images 数组中提取图片链接"
+                "note": "技术实现：采用 ModelScope 异步模式（X-ModelScope-Async-Mode: true），自动获取 task_id 并轮询任务状态（最多 90 次，每 2 秒一次），图生图请求会自动转换为上游所需的 image_url 字段，并从 output_images 数组中提取图片链接"
             }
         }
     }
@@ -331,8 +321,20 @@ async def chat_completions(request: Request):
         result, status, resp_headers = await api_client.call_model(
             model_name, body, headers, timeout=60
         )
-        
-        return JSONResponse(content=result, status_code=status, headers=resp_headers)
+
+        safe_response_headers = {
+            k: v for k, v in resp_headers.items()
+            if k.lower() not in {
+                "content-length",
+                "transfer-encoding",
+                "connection",
+                "date",
+                "server",
+                "content-encoding"
+            }
+        }
+
+        return JSONResponse(content=result, status_code=status, headers=safe_response_headers)
         
     except Exception as e:
         return JSONResponse(

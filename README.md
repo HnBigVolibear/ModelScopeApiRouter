@@ -117,33 +117,36 @@ curl http://localhost:2166/v1/chat/completions \
 ```bash
 curl http://localhost:2166/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer multi-proxy-2025-2000q" \
   -d '{
     "model": "txt2img",
-    "messages": [{"role": "user", "content": "一只可爱的猫咪"}]
+    "messages": [{"role": "user", "content": "一只可爱的猫咪，高清，柔和光线"}]
   }'
 ```
 **技术实现：**
 - 采用 ModelScope 异步模式（`X-ModelScope-Async-Mode: "true"`）
-- 自动获取 `task_id` 并轮询任务状态（最多 30 次，每 2 秒一次）
+- 自动获取 `task_id` 并轮询任务状态（最多 90 次，每 2 秒一次）
 - 任务查询 API: `https://api-inference.modelscope.cn/v1/tasks/{task_id}`
 - 从 `output_images` 数组中提取图片链接
 
 **响应说明：**
 - `choices[0].message.content`: 图片 URL
 - `image_url`: 图片 URL（直接访问字段）
-- `images`: 图片 URL 数组
+- `images[0]`: 第一张图片 URL
+- 响应头中的 `modelscope-ratelimit-model-requests-remaining`: 当前模型剩余次数
 
 **图生图：**
 ```bash
 curl http://localhost:2166/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer multi-proxy-2025-2000q" \
   -d '{
     "model": "img2img",
     "messages": [
       {
         "role": "user",
         "content": [
-          {"type": "text", "text": "让这张图片更鲜艳"},
+          {"type": "text", "text": "优化这张图片，让它更清晰，颜色更自然"},
           {"type": "image_url", "image_url": {"url": "https://qcloud.dpfile.com/pc/d6A1POwDkj8vKTNgbAZswnAaIM2fuXnejIO0X7lJQb9NIYslSlGEPeQVyA4hZRCP.jpg"}}
         ]
       }
@@ -152,8 +155,9 @@ curl http://localhost:2166/v1/chat/completions \
 ```
 **技术实现：**
 - 采用 ModelScope 异步模式（`X-ModelScope-Async-Mode: "true"`）
-- 自动获取 `task_id` 并轮询任务状态（最多 30 次，每 2 秒一次）
+- 自动获取 `task_id` 并轮询任务状态（最多 90 次，每 2 秒一次）
 - 任务查询 API: `https://api-inference.modelscope.cn/v1/tasks/{task_id}`
+- 图生图请求会自动转换为上游所需的 `image_url` 字段
 - 从 `output_images` 数组中提取图片链接
 
 **视觉理解（单图）：**
@@ -195,10 +199,11 @@ print(response.choices[0].message.content)
 # 文生图
 response = client.chat.completions.create(
     model="txt2img",
-    messages=[{"role": "user", "content": "一只可爱的猫咪"}]
+    messages=[{"role": "user", "content": "一只可爱的猫咪，高清，柔和光线"}]
 )
 print(f"图片链接: {response.choices[0].message.content}")
 print(f"图片链接 (直接访问): {response.image_url}")
+print(f"图片链接 (数组): {response.images[0]}")
 
 # 图生图
 response = client.chat.completions.create(
@@ -206,12 +211,14 @@ response = client.chat.completions.create(
     messages=[{
         "role": "user",
         "content": [
-            {"type": "text", "text": "让这张图片更鲜艳"},
+            {"type": "text", "text": "优化这张图片，让它更清晰，颜色更自然"},
             {"type": "image_url", "image_url": {"url": "https://qcloud.dpfile.com/pc/d6A1POwDkj8vKTNgbAZswnAaIM2fuXnejIO0X7lJQb9NIYslSlGEPeQVyA4hZRCP.jpg"}}
         ]
     }]
 )
 print(f"图片链接: {response.choices[0].message.content}")
+print(f"图片链接 (直接访问): {response.image_url}")
+print(f"图片链接 (数组): {response.images[0]}")
 
 # 视觉理解
 response = client.chat.completions.create(
