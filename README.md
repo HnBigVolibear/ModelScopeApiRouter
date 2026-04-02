@@ -126,8 +126,9 @@ curl http://localhost:2166/v1/chat/completions \
 ```
 **技术实现：**
 - 采用 ModelScope 异步模式（`X-ModelScope-Async-Mode: "true"`）
-- 自动获取 `task_id` 并轮询任务状态（最多 30 次，每 2 秒一次）
+- 优先处理非空 `task_id` 并轮询任务状态（最多 30 次，每 2 秒一次）
 - 任务查询 API: `https://api-inference.modelscope.cn/v1/tasks/{task_id}`
+- 如果上游直接返回图片链接，也会直接提取并返回
 - 从 `output_images` 数组中提取图片链接
 
 **响应说明：**
@@ -156,9 +157,10 @@ curl http://localhost:2166/v1/chat/completions \
 ```
 **技术实现：**
 - 采用 ModelScope 异步模式（`X-ModelScope-Async-Mode: "true"`）
-- 自动获取 `task_id` 并轮询任务状态（最多 30 次，每 2 秒一次）
+- 优先处理非空 `task_id` 并轮询任务状态（最多 30 次，每 2 秒一次）
 - 任务查询 API: `https://api-inference.modelscope.cn/v1/tasks/{task_id}`
 - 图生图请求会自动提取首张输入图片，并转换为上游所需的单个 `image_url` 字符串
+- 如果上游返回空 `task_id` 且仍处于处理中，会自动切换下一个 Key 或模型继续尝试
 - 从 `output_images` 数组中提取图片链接
 
 **视觉理解（单图）：**

@@ -37,7 +37,7 @@ class AddModelRequest(BaseModel):
 class MoveModelRequest(BaseModel):
     direction: str  # "up" or "down"
 
-app = FastAPI(title="ModelScope 智能路由 (Refactored)")
+app = FastAPI(title="ModelScopeApiRouter")
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,7 +53,7 @@ async def root():
     static_path = Path(__file__).parent / "static" / "index.html"
     if static_path.exists():
         return FileResponse(static_path)
-    return {"message": "ModelScope Router is running"}
+    return {"message": "ModelScopeApiRouter is running"}
 
 # --- API Key 管理 API ---
 @app.get("/api/keys")
