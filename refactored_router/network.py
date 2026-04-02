@@ -330,7 +330,7 @@ class APIClient:
                         continue
                     
                     result = response.json()
-                    
+
                     # 对文生图和图生图响应进行特殊处理（异步模式）
                     if target_category in ["text2img", "img2img"]:
                         # 检查是否有非空 task_id（异步模式）
@@ -343,7 +343,7 @@ class APIClient:
                                 "Authorization": f"Bearer {key['key']}",
                                 "X-ModelScope-Task-Type": "image_generation"
                             }
-                            
+
                             max_retries = 30
                             retry_count = 0
                             task_completed = False
@@ -351,19 +351,19 @@ class APIClient:
                             while retry_count < max_retries:
                                 await asyncio.sleep(2)
                                 retry_count += 1
-                                
+
                                 async with httpx.AsyncClient() as client:
                                     task_response = await client.get(
                                         f"{config.BASE_URL}/tasks/{task_id}",
                                         headers=task_headers,
                                         timeout=timeout
                                     )
-                                
+
                                 task_result = task_response.json()
                                 task_status = task_result.get("task_status")
-                                
+
                                 logger.info(f"  任务状态: {task_status} (尝试 {retry_count}/{max_retries})")
-                                
+
                                 if task_status == "SUCCEED":
                                     task_completed = True
                                     # 从 output_images 中提取图片链接
@@ -390,12 +390,15 @@ class APIClient:
                                 logger.warning(f"任务轮询超时，返回最后一次任务结果: {task_result}")
                                 result = task_result
                         else:
-                            # 同步模式，直接尝试提取图片 URL
                             image_url = self._extract_image_url(result)
                             if image_url:
                                 result = self._format_image_response(result, image_url, data)
                                 logger.info(f"✅ 成功提取图片链接: {image_url[:50]}...")
-                    
+                            else:
+                                task_status = result.get("task_status")
+                                if task_status in ["PENDING", "PROCESSING"]:
+                                    raise Exception("异步任务返回了空 task_id，切换下一个 Key 或模型重试")
+
                     logger.info(f"✅ 成功！模型: {model['name']}, Key: {key['name']}")
                     return result, response.status_code, dict(response.headers)
                     
