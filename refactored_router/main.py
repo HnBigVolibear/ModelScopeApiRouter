@@ -217,7 +217,7 @@ print(f"图片链接 (数组): {response.images[0]}")""",
                 "base_url": "http://localhost:2166/v1",
                 "api_key": "multi-proxy-2025-2000q",
                 "model": "txt2img",
-                "note": "技术实现：采用 ModelScope 异步模式（X-ModelScope-Async-Mode: true），自动获取 task_id 并轮询任务状态（最多 30 次，每 2 秒一次），从 output_images 数组中提取图片链接"
+                "note": "技术实现：采用 ModelScope 异步模式（X-ModelScope-Async-Mode: true），优先处理非空 task_id 并轮询任务状态（最多 30 次，每 2 秒一次），如果上游直接返回图片链接也会直接提取并返回，再从 output_images 数组中提取图片链接"
             }
         },
         "img2img": {
@@ -265,7 +265,7 @@ print(f"图片链接 (数组): {response.images[0]}")""",
                 "base_url": "http://localhost:2166/v1",
                 "api_key": "multi-proxy-2025-2000q",
                 "model": "img2img",
-                "note": "技术实现：采用 ModelScope 异步模式（X-ModelScope-Async-Mode: true），自动获取非空 task_id 并轮询任务状态（最多 30 次，每 2 秒一次），图生图请求会提取首张输入图片并转换为上游所需的单个 image_url 字符串，再从 output_images 数组中提取图片链接"
+                "note": "技术实现：采用 ModelScope 异步模式（X-ModelScope-Async-Mode: true），优先处理非空 task_id 并轮询任务状态（最多 30 次，每 2 秒一次），图生图请求会提取首张输入图片并转换为上游所需的单个 image_url 字符串；如果上游返回空 task_id 且仍处于处理中，会自动切换下一个 Key 或模型继续尝试，再从 output_images 数组中提取图片链接"
             }
         }
     }
