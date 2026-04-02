@@ -360,7 +360,7 @@ class APIClient:
                                     )
 
                                 task_result = task_response.json()
-                                task_status = task_result.get("task_status")
+                                task_status = str(task_result.get("task_status", "")).strip().upper()
 
                                 logger.info(f"  任务状态: {task_status} (尝试 {retry_count}/{max_retries})")
 
@@ -372,32 +372,37 @@ class APIClient:
                                         result = self._format_image_response(task_result, image_url, data)
                                         logger.info(f"✅ 成功提取图片链接: {image_url[:50]}...")
                                         break
-                                    else:
-                                        logger.warning("任务成功但 output_images 为空")
-                                        result = task_result
+
+                                    image_url = self._extract_image_url(task_result)
+                                    if image_url:
+                                        result = self._format_image_response(task_result, image_url, data)
+                                        logger.info(f"✅ 成功提取图片链接: {image_url[:50]}...")
                                         break
+
+                                    raise Exception("异步任务成功但未返回可用图片链接，切换下一个 Key 或模型重试")
                                 elif task_status == "FAILED":
                                     task_completed = True
                                     logger.error(f"任务失败: {task_result}")
                                     raise Exception(f"任务失败: {task_result.get('error_message', '未知错误')}")
-                                elif task_status not in ["PENDING", "PROCESSING"]:
+                                elif task_status in ["PENDING", "PROCESSING"]:
+                                    continue
+                                else:
                                     task_completed = True
                                     logger.warning(f"未知任务状态: {task_status}")
-                                    result = task_result
-                                    break
+                                    raise Exception(f"异步任务返回未知状态 {task_status or 'EMPTY'}，切换下一个 Key 或模型重试")
 
                             if not task_completed:
-                                logger.warning(f"任务轮询超时，返回最后一次任务结果: {task_result}")
-                                result = task_result
+                                raise Exception("异步任务轮询超时，切换下一个 Key 或模型重试")
                         else:
                             image_url = self._extract_image_url(result)
                             if image_url:
                                 result = self._format_image_response(result, image_url, data)
                                 logger.info(f"✅ 成功提取图片链接: {image_url[:50]}...")
                             else:
-                                task_status = result.get("task_status")
+                                task_status = str(result.get("task_status", "")).strip().upper()
                                 if task_status in ["PENDING", "PROCESSING"]:
                                     raise Exception("异步任务返回了空 task_id，切换下一个 Key 或模型重试")
+                                raise Exception(f"图像任务未返回可用图片链接，状态: {task_status or 'EMPTY'}，切换下一个 Key 或模型重试")
 
                     logger.info(f"✅ 成功！模型: {model['name']}, Key: {key['name']}")
                     return result, response.status_code, dict(response.headers)
