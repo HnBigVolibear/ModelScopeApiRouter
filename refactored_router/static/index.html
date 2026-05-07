@@ -77,6 +77,32 @@
             font-size: 0.8rem; color: #666;
         }
         .model-actions { display: flex; gap: 5px; align-items: center; }
+        .model-status {
+            display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+            margin-right: 6px; flex-shrink: 0;
+        }
+        .status-unknown { background: #ccc; }
+        .status-ok { background: #4caf50; }
+        .status-fail { background: #ff4757; }
+        .status-loading {
+            background: transparent; width: 14px; height: 14px;
+            border: 2px solid #ccc; border-top-color: #667eea;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .btn-test {
+            background: #e8f5e9; color: #2e7d32; padding: 6px 12px;
+            font-size: 0.8rem; border: none; border-radius: 6px;
+            cursor: pointer; font-weight: 600;
+        }
+        .btn-test:hover { background: #c8e6c9; }
+        .btn-test:disabled { opacity: 0.6; cursor: not-allowed; }
+        .model-test-error {
+            font-size: 0.75rem; color: #ff4757; margin-top: 4px;
+        }
+        .model-test-ok {
+            font-size: 0.75rem; color: #4caf50; margin-top: 4px;
+        }
         .quota-bar {
             margin-top: 6px; height: 6px; background: #e0e0e0;
             border-radius: 3px; overflow: hidden;
@@ -130,7 +156,7 @@
                 <span class="status-item" id="status-running">● 运行中</span>
                 <span class="status-item" id="key-count">API Keys: 0</span>
                 <span class="status-item" id="model-count">模型数: 0</span>
-                <span class="status-item" id="version-text">版本: 1.36</span>
+                <span class="status-item" id="version-text">版本: 2.1</span>
             </div>
         </div>
 
@@ -204,7 +230,11 @@
                             <option value="img2img">图生图</option>
                         </select>
                     </div>
+                    <div class="form-group" style="max-width: 200px; display: flex; align-items: flex-end;">
+                        <button class="btn btn-primary btn-small" id="batch-test-btn" onclick="batchTestModels()" style="height: 42px;">🚀 一键批量测试</button>
+                    </div>
                 </div>
+                <div id="batch-test-progress" style="margin-bottom:10px;display:none;"></div>
                 <div id="model-list"></div>
             </div>
         </div>
@@ -310,42 +340,75 @@
             }).join('');
         }
         
+        let modelTestResults = {};  // 存储测试结果，key 为 model.id 或 model.name
+
+        function getModelTestKey(model) {
+            return model.id || model.name;
+        }
+
         function renderModels(modelsByCategory) {
+            lastModelsByCategory = modelsByCategory;
             const list = document.getElementById('model-list');
             const filterCat = document.getElementById('filter-category').value;
             let html = '';
-            
+
             for (const [catId, catName] of Object.entries(categories)) {
                 const models = modelsByCategory[catId] || [];
                 if (models.length === 0) continue;
                 if (filterCat !== 'all' && filterCat !== catId) continue;
-                
+
                 html += `
                     <div class="category-section">
                         <div class="category-title">${catName} <span style="font-weight:normal;color:#999;">(顺序 = 优先级)</span></div>
                         <ul class="model-list">
-                            ${models.map((model, idx) => `
+                            ${models.map((model, idx) => {
+                                const testKey = getModelTestKey(model);
+                                const testResult = modelTestResults[testKey];
+                                let statusHtml = '';
+                                if (testResult === undefined) {
+                                    statusHtml = '<span class="model-status status-unknown" title="未测试"></span>';
+                                } else if (testResult === 'loading') {
+                                    statusHtml = '<span class="model-status status-loading" title="测试中..."></span>';
+                                } else if (testResult.ok) {
+                                    statusHtml = '<span class="model-status status-ok" title="可用"></span>';
+                                } else {
+                                    statusHtml = '<span class="model-status status-fail" title="不可用"></span>';
+                                }
+
+                                let testMsgHtml = '';
+                                if (testResult && !testResult.ok) {
+                                    testMsgHtml = `<div class="model-test-error">${escapeHtml(testResult.error || '未知错误')}</div>`;
+                                } else if (testResult && testResult.ok) {
+                                    testMsgHtml = `<div class="model-test-ok">✓ 可用${testResult.content ? ': ' + escapeHtml(testResult.content).substring(0, 30) : ''}</div>`;
+                                }
+
+                                return `
                                 <li class="model-item">
                                     <div class="model-info">
-                                        <div class="model-name">${escapeHtml(model.name)} <span style="font-weight:normal;color:#999;font-size:0.8rem;">#${idx + 1}</span></div>
+                                        <div class="model-name">
+                                            ${statusHtml}${escapeHtml(model.name)} <span style="font-weight:normal;color:#999;font-size:0.8rem;">#${idx + 1}</span>
+                                        </div>
                                         <div class="model-meta">${escapeHtml(model.model_id)}</div>
+                                        ${testMsgHtml}
                                     </div>
                                     <div class="model-actions">
+                                        <button class="btn-test" id="test-btn-${testKey}" onclick="testModel('${testKey}')" ${testResult === 'loading' ? 'disabled' : ''}>${testResult === 'loading' ? '测试中...' : '🔍 测试'}</button>
                                         <button class="btn btn-secondary btn-icon" onclick="moveModel('${model.id}', 'up')" title="上移">↑</button>
                                         <button class="btn btn-secondary btn-icon" onclick="moveModel('${model.id}', 'down')" title="下移">↓</button>
                                         <button class="btn btn-danger btn-small" onclick="deleteModel('${model.id}')">删除</button>
                                     </div>
                                 </li>
-                            `).join('')}
+                            `;
+                            }).join('')}
                         </ul>
                     </div>
                 `;
             }
-            
+
             if (!html) {
                 html = '<div class="empty-state">还没有添加模型</div>';
             }
-            
+
             list.innerHTML = html;
         }
         
@@ -480,6 +543,81 @@ Model: ${ex.openai.model}</div>
         
         loadData();
         setInterval(loadData, 15000);
+
+        async function testModel(modelKey) {
+            modelTestResults[modelKey] = 'loading';
+            loadData();
+
+            try {
+                const res = await fetch(`/api/models/${modelKey}/test`, { method: 'POST' });
+                const data = await res.json();
+                modelTestResults[modelKey] = { ok: data.success, error: data.error, content: data.content };
+            } catch (e) {
+                modelTestResults[modelKey] = { ok: false, error: e.message || '网络错误' };
+            }
+            loadData();
+        }
+
+        async function batchTestModels() {
+            const btn = document.getElementById('batch-test-btn');
+            const prog = document.getElementById('batch-test-progress');
+
+            const allModels = [];
+            for (const [cat, models] of Object.entries(lastModelsByCategory || {})) {
+                for (const m of models) allModels.push(m);
+            }
+
+            if (allModels.length === 0) {
+                alert('没有模型可以测试');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⏳ 测试中...';
+            prog.style.display = 'block';
+
+            let done = 0, ok = 0, fail = 0;
+            const total = allModels.length;
+            const concurrency = 5;  // 5 个并发
+
+            async function testOne(model) {
+                const key = getModelTestKey(model);
+                modelTestResults[key] = 'loading';
+                loadData();
+
+                try {
+                    const res = await fetch(`/api/models/${key}/test`, { method: 'POST' });
+                    const data = await res.json();
+                    modelTestResults[key] = { ok: data.success, error: data.error, content: data.content };
+                    if (data.success) ok++; else fail++;
+                } catch (e) {
+                    modelTestResults[key] = { ok: false, error: e.message || '网络错误' };
+                    fail++;
+                }
+                done++;
+                prog.innerHTML = `<span style="color:#667eea;">⏳ ${done}/${total} · ✅${ok} ❌${fail}</span>`;
+                loadData();
+            }
+
+            // 并发控制：一次最多 concurrency 个
+            const queue = [...allModels];
+            async function worker() {
+                while (queue.length > 0) {
+                    const model = queue.shift();
+                    await testOne(model);
+                }
+            }
+
+            const workers = Array(Math.min(concurrency, total)).fill().map(() => worker());
+            await Promise.all(workers);
+
+            prog.innerHTML = `<span style="color:#333;">✅ 测试完成: ${total} 个模型, <span style="color:#4caf50;font-weight:600;">${ok} 可用</span>${fail > 0 ? `, <span style=\"color:#ff4757;font-weight:600;\">${fail} 不可用</span>` : ''}</span>`;
+            btn.disabled = false;
+            btn.textContent = '🚀 一键批量测试';
+        }
+
+        // 保存最近一次 modelsByCategory 供批量测试使用
+        let lastModelsByCategory = {};
     </script>
 </body>
 </html>

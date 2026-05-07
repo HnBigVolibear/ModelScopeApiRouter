@@ -16,3 +16,4 @@ dist/
 test_*.py
 router_data/*.json
 !router_data/.gitkeep
+.env

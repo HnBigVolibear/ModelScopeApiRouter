@@ -54,6 +54,29 @@ async def root():
     return {"message": "ModelScopeApiRouter is running"}
 
 
+@app.get("/v1/models")
+async def list_models():
+    """OpenAI 兼容的模型列表端点"""
+    models_list = []
+    for model in config.MODELS:
+        models_list.append({
+            "id": model.get("name", model.get("model_id", "")),
+            "object": "model",
+            "created": 0,
+            "owned_by": model.get("category", "chat")
+        })
+    # 加上简化的别名：chat / txt2img / img2img / vision
+    for alias in ["chat", "txt2img", "img2img", "vision"]:
+        if not any(m["id"] == alias for m in models_list):
+            models_list.append({
+                "id": alias,
+                "object": "model",
+                "created": 0,
+                "owned_by": "router-alias"
+            })
+    return {"object": "list", "data": models_list}
+
+
 @app.get("/api/keys")
 async def get_keys():
     keys_with_quota = []
@@ -103,6 +126,84 @@ async def delete_model(model_id: str):
 async def move_model(model_id: str, req: MoveModelRequest):
     success = config.move_model(model_id, req.direction)
     return {"success": success}
+
+
+@app.post("/api/models/{model_id}/test")
+async def test_model(model_id: str):
+    """测试模型是否可用 - 发送轻量请求验证"""
+    import httpx
+    from settings import config
+    import json as _json
+
+    # 找到模型
+    target_model = None
+    for m in config.MODELS:
+        if m.get("id") == model_id or m.get("name") == model_id:
+            target_model = m
+            break
+
+    if not target_model:
+        return {"success": False, "error": "模型不存在"}
+
+    if not config.API_KEYS:
+        return {"success": False, "error": "没有可用的 API Key"}
+
+    key = config.API_KEYS[0]
+    category = target_model.get("category", "chat")
+
+    try:
+        if category in ("text2img", "img2img"):
+            # 图片生成：提交异步任务后立即检查是否有 task_id
+            url = f"{config.BASE_URL}/images/generations"
+            test_data = {
+                "model": target_model["model_id"],
+                "prompt": "test"
+            }
+            headers = {
+                "Authorization": f"Bearer {key['key']}",
+                "Content-Type": "application/json",
+                "X-ModelScope-Async-Mode": "true"
+            }
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, content=_json.dumps(test_data), headers=headers, timeout=20)
+                if resp.status_code >= 400:
+                    return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+                result = resp.json()
+                if not isinstance(result, dict):
+                    return {"success": False, "error": "返回非JSON格式"}
+                task_id = result.get("task_id", "")
+                if task_id:
+                    return {"success": True, "task_id": task_id, "model": target_model["model_id"]}
+                if result.get("choices") is None and not result.get("image_url"):
+                    return {"success": False, "error": "返回空响应(choices=null)"}
+                return {"success": True, "model": target_model["model_id"]}
+        else:
+            # chat / vision：发一句 hi 测试
+            url = f"{config.BASE_URL}/chat/completions"
+            test_data = {
+                "model": target_model["model_id"],
+                "messages": [{"role": "user", "content": "hi"}]
+            }
+            headers = {
+                "Authorization": f"Bearer {key['key']}",
+                "Content-Type": "application/json"
+            }
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, content=_json.dumps(test_data), headers=headers, timeout=20)
+                if resp.status_code >= 400:
+                    return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+                result = resp.json()
+                choices = result.get("choices")
+                if not isinstance(choices, list) or not choices:
+                    return {"success": False, "error": "返回空响应(choices=null)"}
+                msg = choices[0].get("message", {})
+                content = msg.get("content", "")
+                if not content or not content.strip():
+                    return {"success": False, "error": "返回空内容"}
+                return {"success": True, "model": target_model["model_id"], "content": content[:80]}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/api/examples")
@@ -297,8 +398,11 @@ async def chat_completions(request: Request):
         headers = dict(request.headers)
         headers.pop("Authorization", None)
         
+        # 图片生成类请求需要更长超时（异步轮询最多 80×3=240秒）
+        call_timeout = 180 if target_category in ("text2img", "img2img") else 60
+
         result, status, resp_headers = await api_client.call_model(
-            model_name, body, headers, timeout=60
+            model_name, body, headers, timeout=call_timeout
         )
 
         safe_response_headers = {

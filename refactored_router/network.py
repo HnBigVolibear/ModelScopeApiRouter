@@ -40,20 +40,21 @@ class APIClient:
     
     def _update_quota_from_headers(self, key_id: str, headers: dict):
         quota = {}
-        
+
         for h in headers:
-            if h.lower() == "modelscope-ratelimit-tpm":
-                quota["tpm"] = int(headers[h])
-            elif h.lower() == "modelscope-ratelimit-rpm":
-                quota["rpm"] = int(headers[h])
-            elif h.lower() == "modelscope-ratelimit-model-limit":
-                quota["model_limit"] = int(headers[h])
-            elif h.lower() == "modelscope-ratelimit-daily-remaining":
-                quota["daily_remaining"] = int(headers[h])
-            elif h.lower() == "modelscope-ratelimit-daily-limit":
+            hl = h.lower()
+            if hl == "modelscope-ratelimit-requests-limit":
                 quota["daily_limit"] = int(headers[h])
-        
-        config.update_quota(key_id, quota)
+            elif hl == "modelscope-ratelimit-requests-remaining":
+                quota["daily_remaining"] = int(headers[h])
+            elif hl == "modelscope-ratelimit-model-requests-limit":
+                quota["model_limit"] = int(headers[h])
+            elif hl == "modelscope-ratelimit-model-requests-remaining":
+                quota["model_remaining"] = int(headers[h])
+
+        if quota:
+            quota["updated_at"] = time.time()
+            config.update_quota(key_id, quota)
         return quota
     
     def is_key_exhausted(self, key_id: str, quota: Dict) -> bool:
@@ -635,6 +636,10 @@ class APIClient:
         logger.info(f"请求分类: {target_category}, 模型数: {len(category_models)}, Key 数: {len(all_keys)}, 上游并发限制: {self.upstream_concurrency}")
         exhausted_models = set()
 
+        # 图片生成类请求耗时较长，限制最多尝试 3 个模型
+        max_image_model_attempts = 3 if target_category in ("text2img", "img2img") else len(category_models)
+        model_attempt_count = 0
+
         while True:
             candidate_models = await self._rank_available_models(category_models, exhausted_models)
             if not candidate_models:
@@ -751,12 +756,17 @@ class APIClient:
                                             "X-ModelScope-Task-Type": "image_generation"
                                         }
 
-                                        max_retries = 30
+                                        if target_category == "img2img":
+                                            max_retries = 60
+                                            poll_interval = 4
+                                        else:
+                                            max_retries = 40
+                                            poll_interval = 3
                                         retry_count = 0
                                         task_completed = False
 
                                         while retry_count < max_retries:
-                                            await asyncio.sleep(2)
+                                            await asyncio.sleep(poll_interval)
                                             retry_count += 1
 
                                             task_response = await self._get_json(
@@ -854,7 +864,12 @@ class APIClient:
                     await self._mark_model_retryable_failure(model_id, "模型下无可用 Key")
 
                 exhausted_models.add(model_id)
-                logger.warning(f"⚠️  模型 {model['name']} 所有 Key 都失败，换下一个模型")
+                model_attempt_count += 1
+                logger.warning(f"⚠️  模型 {model['name']} 所有 Key 都失败，换下一个模型 ({model_attempt_count}/{max_image_model_attempts})")
+
+                if model_attempt_count >= max_image_model_attempts:
+                    logger.warning(f"图片生成类请求已达最大模型尝试次数 ({max_image_model_attempts})，不再重试")
+                    break
 
             if not made_progress:
                 break
