@@ -76,6 +76,24 @@
         .key-meta, .model-meta {
             font-size: 0.8rem; color: #666;
         }
+        .key-quota-grid {
+            display: flex; gap: 16px; margin-top: 8px;
+        }
+        .key-quota-item {
+            flex: 1; min-width: 100px;
+        }
+        .key-quota-label {
+            font-size: 0.7rem; color: #999; display: block;
+        }
+        .key-quota-num {
+            font-size: 0.85rem; color: #333; font-weight: 600;
+        }
+        .key-quota-unknown {
+            font-size: 0.75rem; color: #ccc; margin-top: 6px;
+        }
+        .key-actions {
+            display: flex; gap: 6px; align-items: center; flex-shrink: 0;
+        }
         .model-actions { display: flex; gap: 5px; align-items: center; }
         .model-status {
             display: inline-block; width: 10px; height: 10px; border-radius: 50%;
@@ -180,6 +198,12 @@
                     </div>
                 </div>
                 <button class="btn btn-primary" onclick="addKey()">添加</button>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+                    <input type="text" id="quota-test-model" placeholder="要测试的模型ID，如 Qwen/Qwen3-30B-A3B" style="flex:1;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.85rem;">
+                    <button class="btn btn-secondary" id="batch-key-test-btn" onclick="batchTestKeys()" style="flex-shrink:0;">🔍 一键测试所有 Key</button>
+                </div>
+                <div style="font-size:0.75rem;color:#999;margin-top:4px;">填写模型ID可查看该模型的配额，留空则使用默认第一个 chat 模型</div>
+                <span id="key-test-progress" style="display:none;margin-top:6px;font-size:0.85rem;"></span>
             </div>
 
             <div class="card">
@@ -316,16 +340,35 @@
                 list.innerHTML = '<li class="empty-state">还没有添加 API Key</li>';
                 return;
             }
-            
+
             list.innerHTML = keys.map(key => {
                 let quotaHtml = '';
                 if (key.quota) {
-                    const dailyUsed = key.quota.daily_limit - key.quota.daily_remaining;
-                    const dailyPercent = ((dailyUsed / key.quota.daily_limit) * 100).toFixed(1);
+                    const dailyRemaining = key.quota.daily_remaining || 0;
+                    const dailyLimit = key.quota.daily_limit || 1;
+                    const dailyUsed = dailyLimit - dailyRemaining;
+                    const dailyPercent = ((dailyUsed / dailyLimit) * 100).toFixed(1);
+                    const modelRemaining = key.quota.model_remaining;
+                    const modelLimit = key.quota.model_limit;
+
                     quotaHtml = `
-                        <div class="key-meta">每日: ${dailyUsed} / ${key.quota.daily_limit}</div>
-                        <div class="quota-bar"><div class="quota-fill" style="width: ${dailyPercent}%"></div></div>
+                        <div class="key-quota-grid">
+                            <div class="key-quota-item">
+                                <span class="key-quota-label">日配额</span>
+                                <span class="key-quota-num">${dailyUsed} / ${dailyLimit}</span>
+                                <div class="quota-bar"><div class="quota-fill" style="width:${dailyPercent}%"></div></div>
+                            </div>
+                            ${modelLimit ? `
+                            <div class="key-quota-item">
+                                <span class="key-quota-label">模型配额 (该模型)</span>
+                                <span class="key-quota-num">${modelLimit - modelRemaining} / ${modelLimit}<span style="font-weight:normal;color:#999;font-size:0.75rem;"> (剩${modelRemaining})</span></span>
+                                <div class="quota-bar"><div class="quota-fill" style="width:${(((modelLimit - modelRemaining) / modelLimit) * 100).toFixed(1)}%"></div></div>
+                            </div>
+                            ` : ''}
+                        </div>
                     `;
+                } else {
+                    quotaHtml = '<div class="key-quota-unknown">🕐 额度未检测</div>';
                 }
                 return `
                     <li class="key-item">
@@ -334,7 +377,10 @@
                             <div class="key-meta">${maskKey(key.key)}</div>
                             ${quotaHtml}
                         </div>
-                        <button class="btn btn-danger" onclick="deleteKey('${key.id}')">删除</button>
+                        <div class="key-actions">
+                            <button class="btn-test" onclick="testSingleKey('${key.id}')" title="测试额度">🔍 测试</button>
+                            <button class="btn btn-danger" onclick="deleteKey('${key.id}')">删除</button>
+                        </div>
                     </li>
                 `;
             }).join('');
@@ -482,7 +528,73 @@ Model: ${ex.openai.model}</div>
                 console.error(e);
             }
         }
-        
+
+        // ========== Key 额度测试 ==========
+
+        async function testSingleKey(keyId) {
+            const prog = document.getElementById('key-test-progress');
+            const modelInput = document.getElementById('quota-test-model');
+            const model = modelInput.value.trim() || '';
+            prog.style.display = 'block';
+            prog.innerHTML = `<span style="color:#667eea;">⏳ 测试中... ${model ? '(模型: ' + escapeHtml(model) + ')' : ''}</span>`;
+            try {
+                const body = { model };
+                const res = await fetch('/api/keys/test-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                const mine = (data.results || []).find(r => r.key_id === keyId);
+                if (mine) {
+                    if (mine.success) {
+                        prog.innerHTML = '<span style="color:#4caf50;">✓ 测试完成</span>';
+                    } else {
+                        prog.innerHTML = `<span style="color:#ff4757;">✗ ${escapeHtml(mine.error || '失败')}</span>`;
+                    }
+                }
+            } catch(e) {
+                prog.innerHTML = `<span style="color:#ff4757;">✗ ${escapeHtml(e.message)}</span>`;
+            }
+            loadData();
+            setTimeout(() => { prog.style.display = 'none'; }, 3000);
+        }
+
+        async function batchTestKeys() {
+            const btn = document.getElementById('batch-key-test-btn');
+            const prog = document.getElementById('key-test-progress');
+            const modelInput = document.getElementById('quota-test-model');
+            const model = modelInput.value.trim() || '';
+            btn.disabled = true;
+            btn.textContent = '⏳ 测试中...';
+            prog.style.display = 'block';
+            const modelLabel = model ? ` (模型: ${model})` : '';
+            prog.innerHTML = `<span style="color:#667eea;">⏳ 并发测试所有 Key...${modelLabel}</span>`;
+
+            try {
+                const body = { model };
+                const res = await fetch('/api/keys/test-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    const { total, ok, fail } = data;
+                    prog.innerHTML = `<span style="color:#333;">✅ ${total} 个 Key: <span style="color:#4caf50;font-weight:600;">${ok} 可用</span>${fail > 0 ? `, <span style="color:#ff4757;font-weight:600;">${fail} 不可用</span>` : ''}${modelLabel}</span>`;
+                } else {
+                    prog.innerHTML = `<span style="color:#ff4757;">✗ ${escapeHtml(data.error || '测试失败')}</span>`;
+                }
+            } catch(e) {
+                prog.innerHTML = `<span style="color:#ff4757;">✗ ${escapeHtml(e.message)}</span>`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🔍 一键测试所有 Key';
+            loadData();
+            setTimeout(() => { prog.style.display = 'none'; }, 5000);
+        }
+
         async function deleteKey(id) {
             if (!confirm('确定删除这个 API Key？')) return;
             try {

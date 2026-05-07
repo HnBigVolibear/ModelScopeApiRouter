@@ -187,5 +187,26 @@
     "model_id": "Qwen/Qwen-Image-Edit",
     "category": "img2img",
     "order": 4
+  },
+  {
+    "id": "66dac11f-6a41-43e4-8cf3-0d8006848f59",
+    "name": "ZhipuAI/GLM-5.1",
+    "model_id": "ZhipuAI/GLM-5.1",
+    "category": "chat",
+    "order": 12
+  },
+  {
+    "id": "de265eca-700b-4351-a09a-94863c715943",
+    "name": "ZhipuAI/GLM-5.1-FP8",
+    "model_id": "ZhipuAI/GLM-5.1-FP8",
+    "category": "chat",
+    "order": 13
+  },
+  {
+    "id": "022c8d80-80c0-4dca-a8aa-bf017c902434",
+    "name": "ZhipuAI/GLM-5",
+    "model_id": "ZhipuAI/GLM-5",
+    "category": "chat",
+    "order": 14
   }
 ]

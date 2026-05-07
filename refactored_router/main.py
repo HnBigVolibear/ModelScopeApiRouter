@@ -95,6 +95,103 @@ async def add_key(req: AddKeyRequest):
     return {"success": True, "key": new_key}
 
 
+@app.post("/api/keys/test-all")
+async def test_all_keys(request: Request = None):
+    """一键测试所有 Key 的额度 — 发轻量请求获取实时配额"""
+    import httpx
+    import asyncio as _asyncio
+
+    if not config.API_KEYS:
+        return {"success": False, "error": "没有可用的 API Key"}
+
+    # 支持 POST body 中传入 model 字段指定要测试的模型
+    model_override = None
+    if request:
+        try:
+            body = await request.json()
+            model_override = body.get("model", "").strip()
+        except Exception:
+            pass
+
+    if model_override:
+        test_model_id = model_override
+    else:
+        # 默认用第一个 chat 模型
+        models_by_cat = config.get_models_by_category()
+        chat_models = models_by_cat.get("chat", [])
+        test_model_id = chat_models[0]["model_id"] if chat_models else "deepseek-v3"
+
+    concurrency = 3
+
+    async def test_one(key: dict) -> dict:
+        try:
+            url = f"{config.BASE_URL}/chat/completions"
+            test_data = {
+                "model": test_model_id,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 1
+            }
+            headers = {
+                "Authorization": f"Bearer {key['key']}",
+                "Content-Type": "application/json"
+            }
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, json=test_data, headers=headers, timeout=15)
+
+            daily_limit = resp.headers.get("modelscope-ratelimit-requests-limit")
+            daily_remaining = resp.headers.get("modelscope-ratelimit-requests-remaining")
+            model_limit = resp.headers.get("modelscope-ratelimit-model-requests-limit")
+            model_remaining = resp.headers.get("modelscope-ratelimit-model-requests-remaining")
+
+            quota = {}
+            if daily_limit: quota["daily_limit"] = int(daily_limit)
+            if daily_remaining: quota["daily_remaining"] = int(daily_remaining)
+            if model_limit: quota["model_limit"] = int(model_limit)
+            if model_remaining: quota["model_remaining"] = int(model_remaining)
+
+            if quota:
+                config.update_quota(key["id"], quota)
+                return {
+                    "key_id": key["id"],
+                    "key_name": key["name"],
+                    "success": True,
+                    "quota": quota,
+                    "status": resp.status_code
+                }
+            else:
+                return {
+                    "key_id": key["id"],
+                    "key_name": key["name"],
+                    "success": resp.status_code < 400,
+                    "status": resp.status_code,
+                    "quota": None,
+                    "note": "响应头无额度信息"
+                }
+        except Exception as e:
+            return {
+                "key_id": key["id"],
+                "key_name": key["name"],
+                "success": False,
+                "error": str(e)
+            }
+
+    sem = _asyncio.Semaphore(concurrency)
+    async def worker(key):
+        async with sem:
+            return await test_one(key)
+
+    results = await _asyncio.gather(*[worker(key) for key in config.API_KEYS])
+
+    ok = sum(1 for r in results if r.get("success"))
+    return {
+        "success": True,
+        "total": len(results),
+        "ok": ok,
+        "fail": len(results) - ok,
+        "results": results
+    }
+
+
 @app.delete("/api/keys/{key_id}")
 async def delete_key(key_id: str):
     success = config.delete_api_key(key_id)
@@ -130,10 +227,11 @@ async def move_model(model_id: str, req: MoveModelRequest):
 
 @app.post("/api/models/{model_id}/test")
 async def test_model(model_id: str):
-    """测试模型是否可用 - 发送轻量请求验证"""
+    """测试模型是否可用 - 多 Key 轮换 + 重试，避免因上游偶发空响应误报"""
     import httpx
     from settings import config
     import json as _json
+    import asyncio as _asyncio
 
     # 找到模型
     target_model = None
@@ -148,62 +246,88 @@ async def test_model(model_id: str):
     if not config.API_KEYS:
         return {"success": False, "error": "没有可用的 API Key"}
 
-    key = config.API_KEYS[0]
     category = target_model.get("category", "chat")
+    max_retries = 2  # 每个 key 最多重试 2 次（含首次）
+    last_error = None
 
-    try:
-        if category in ("text2img", "img2img"):
-            # 图片生成：提交异步任务后立即检查是否有 task_id
-            url = f"{config.BASE_URL}/images/generations"
-            test_data = {
-                "model": target_model["model_id"],
-                "prompt": "test"
-            }
-            headers = {
-                "Authorization": f"Bearer {key['key']}",
-                "Content-Type": "application/json",
-                "X-ModelScope-Async-Mode": "true"
-            }
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, content=_json.dumps(test_data), headers=headers, timeout=20)
-                if resp.status_code >= 400:
-                    return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
-                result = resp.json()
-                if not isinstance(result, dict):
-                    return {"success": False, "error": "返回非JSON格式"}
-                task_id = result.get("task_id", "")
-                if task_id:
-                    return {"success": True, "task_id": task_id, "model": target_model["model_id"]}
-                if result.get("choices") is None and not result.get("image_url"):
-                    return {"success": False, "error": "返回空响应(choices=null)"}
-                return {"success": True, "model": target_model["model_id"]}
-        else:
-            # chat / vision：发一句 hi 测试
-            url = f"{config.BASE_URL}/chat/completions"
-            test_data = {
-                "model": target_model["model_id"],
-                "messages": [{"role": "user", "content": "hi"}]
-            }
-            headers = {
-                "Authorization": f"Bearer {key['key']}",
-                "Content-Type": "application/json"
-            }
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, content=_json.dumps(test_data), headers=headers, timeout=20)
-                if resp.status_code >= 400:
-                    return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
-                result = resp.json()
-                choices = result.get("choices")
-                if not isinstance(choices, list) or not choices:
-                    return {"success": False, "error": "返回空响应(choices=null)"}
-                msg = choices[0].get("message", {})
-                content = msg.get("content", "")
-                if not content or not content.strip():
-                    return {"success": False, "error": "返回空内容"}
-                return {"success": True, "model": target_model["model_id"], "content": content[:80]}
+    # 遍历所有 Key，直到有一个成功
+    for key in config.API_KEYS:
+        for attempt in range(max_retries):
+            try:
+                if category in ("text2img", "img2img"):
+                    url = f"{config.BASE_URL}/images/generations"
+                    test_data = {
+                        "model": target_model["model_id"],
+                        "prompt": "test"
+                    }
+                    headers = {
+                        "Authorization": f"Bearer {key['key']}",
+                        "Content-Type": "application/json",
+                        "X-ModelScope-Async-Mode": "true"
+                    }
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.post(url, content=_json.dumps(test_data), headers=headers, timeout=20)
+                        if resp.status_code == 429:
+                            last_error = f"[{key['name']}] 被限流(429)"
+                            await _asyncio.sleep(2)
+                            continue
+                        if resp.status_code >= 400:
+                            last_error = f"[{key['name']}] HTTP {resp.status_code}"
+                            break  # 非限流 4xx/5xx 不重试，换 key
+                        result = resp.json()
+                        if not isinstance(result, dict):
+                            last_error = f"[{key['name']}] 返回非JSON格式"
+                            break
+                        task_id = result.get("task_id", "")
+                        if task_id:
+                            return {"success": True, "task_id": task_id, "model": target_model["model_id"], "key_name": key["name"]}
+                        if result.get("image_url") or result.get("choices"):
+                            return {"success": True, "model": target_model["model_id"], "key_name": key["name"]}
+                        # 空壳响应，重试
+                        last_error = f"[{key['name']}] 返回空响应(choices=null)"
+                        if attempt < max_retries - 1:
+                            await _asyncio.sleep(1)
+                        continue
+                else:
+                    url = f"{config.BASE_URL}/chat/completions"
+                    test_data = {
+                        "model": target_model["model_id"],
+                        "messages": [{"role": "user", "content": "hi"}]
+                    }
+                    headers = {
+                        "Authorization": f"Bearer {key['key']}",
+                        "Content-Type": "application/json"
+                    }
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.post(url, content=_json.dumps(test_data), headers=headers, timeout=20)
+                        if resp.status_code == 429:
+                            last_error = f"[{key['name']}] 被限流(429)"
+                            await _asyncio.sleep(2)
+                            continue
+                        if resp.status_code >= 400:
+                            last_error = f"[{key['name']}] HTTP {resp.status_code}"
+                            break
+                        result = resp.json()
+                        choices = result.get("choices")
+                        if isinstance(choices, list) and choices:
+                            msg = choices[0].get("message", {})
+                            content = msg.get("content", "")
+                            if content and content.strip():
+                                return {"success": True, "model": target_model["model_id"], "content": content[:80], "key_name": key["name"]}
+                        # 空壳响应，重试
+                        last_error = f"[{key['name']}] 返回空响应(choices=null)"
+                        if attempt < max_retries - 1:
+                            await _asyncio.sleep(1)
+                        continue
 
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+            except Exception as e:
+                last_error = f"[{key['name']}] {e}"
+                if attempt < max_retries - 1:
+                    await _asyncio.sleep(1)
+                    continue
+                break  # 这个 key 的网络/超时异常，换 key
+
+    return {"success": False, "error": last_error or "所有 Key 均失败"}
 
 
 @app.get("/api/examples")
@@ -374,6 +498,12 @@ async def chat_completions(request: Request):
     try:
         body = await request.json()
         requested_model = body.get("model", "chat")
+
+        # 暂不支持流式响应，去掉 stream 标志强制非流式返回
+        if body.get("stream"):
+            body.pop("stream")
+            import logging
+            logging.getLogger("uvicorn").info("检测到 stream=true，当前暂不支持流式，已自动转为非流式返回")
         
         category_mapping = {
             "chat": "chat",
