@@ -1,20 +1,24 @@
 import os
 import json
 import time
+import shutil
 from pathlib import Path
 from typing import List, Dict, Optional
 
 class Settings:
     def __init__(self):
         self.BASE_DIR = Path(__file__).parent
-        self.DATA_DIR = self.BASE_DIR / "router_data"
+        self.BUNDLED_DATA_DIR = self.BASE_DIR / "router_data"
+        self.DATA_DIR = Path(os.getenv("ROUTER_DATA_DIR", str(self.BUNDLED_DATA_DIR)))
         self.STATS_FILE = self.DATA_DIR / "model_stats.json"
         self.CONFIG_FILE = self.BASE_DIR / "config.json"
         self.ENV_FILE = self.BASE_DIR / ".env"
         self.API_KEYS_FILE = self.DATA_DIR / "api_keys.json"
+        self.BUNDLED_API_KEYS_FILE = self.BUNDLED_DATA_DIR / "api_keys.json"
         self.QUOTA_FILE = self.DATA_DIR / "quota_info.json"
         
-        self.DATA_DIR.mkdir(exist_ok=True)
+        self.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        self._ensure_data_file(self.API_KEYS_FILE, self.BUNDLED_API_KEYS_FILE, default_content="[]")
         
         self._load_env()
         self.BASE_URL = os.getenv("MS_BASE_URL", "https://api-inference.modelscope.cn/v1")
@@ -46,6 +50,17 @@ class Settings:
                     key, value = line.split("=", 1)
                     os.environ[key.strip()] = value.strip()
 
+    def _ensure_data_file(self, target_path: Path, source_path: Path, default_content: str = ""):
+        """确保数据文件存在，优先从打包目录同步"""
+        if target_path.exists():
+            return
+        if source_path.exists():
+            shutil.copy2(source_path, target_path)
+            return
+        if default_content != "":
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(default_content)
+
     def _load_models(self) -> List[Dict]:
         if not self.CONFIG_FILE.exists():
             return []
@@ -67,8 +82,15 @@ class Settings:
 
     def _save_api_keys(self, keys: List[Dict]):
         """保存 API keys"""
+        self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         with open(self.API_KEYS_FILE, "w", encoding="utf-8") as f:
             json.dump(keys, f, ensure_ascii=False, indent=2)
+        if self.BUNDLED_DATA_DIR.exists() and self.BUNDLED_API_KEYS_FILE != self.API_KEYS_FILE:
+            try:
+                with open(self.BUNDLED_API_KEYS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(keys, f, ensure_ascii=False, indent=2)
+            except OSError:
+                pass
 
     def _load_quota_info(self) -> Dict:
         """加载额度信息"""
