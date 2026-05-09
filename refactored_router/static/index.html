@@ -531,6 +531,20 @@ Model: ${ex.openai.model}</div>
 
         // ========== Key 额度测试 ==========
 
+        function showTestResult(progId, html, autoHideMs = 20000) {
+            const prog = document.getElementById(progId);
+            prog.style.display = 'block';
+            prog.innerHTML = html + ' <button onclick="hideTestResult(\'' + progId + '\')" style="margin-left:10px;background:none;border:1px solid #ccc;border-radius:3px;cursor:pointer;padding:2px 6px;font-size:12px;color:#666;">✕ 关闭</button>';
+            if (autoHideMs > 0) {
+                setTimeout(() => { prog.style.display = 'none'; }, autoHideMs);
+            }
+        }
+
+        function hideTestResult(progId) {
+            const prog = document.getElementById(progId);
+            prog.style.display = 'none';
+        }
+
         async function testSingleKey(keyId) {
             const prog = document.getElementById('key-test-progress');
             const modelInput = document.getElementById('quota-test-model');
@@ -546,15 +560,14 @@ Model: ${ex.openai.model}</div>
                 });
                 const data = await res.json();
                 if (data.success) {
-                    prog.innerHTML = '<span style="color:#4caf50;">✓ 测试完成</span>';
+                    showTestResult('key-test-progress', '<span style="color:#4caf50;">✓ 测试完成</span>');
                 } else {
-                    prog.innerHTML = `<span style="color:#ff4757;">✗ ${escapeHtml(data.error || '失败')}</span>`;
+                    showTestResult('key-test-progress', `<span style="color:#ff4757;">✗ ${escapeHtml(data.error || '失败')}</span>`);
                 }
             } catch(e) {
-                prog.innerHTML = `<span style="color:#ff4757;">✗ ${escapeHtml(e.message)}</span>`;
+                showTestResult('key-test-progress', `<span style="color:#ff4757;">✗ ${escapeHtml(e.message)}</span>`);
             }
             loadData();
-            setTimeout(() => { prog.style.display = 'none'; }, 3000);
         }
 
         async function batchTestKeys() {
@@ -578,18 +591,17 @@ Model: ${ex.openai.model}</div>
                 const data = await res.json();
                 if (data.success) {
                     const { total, ok, fail } = data;
-                    prog.innerHTML = `<span style="color:#333;">✅ ${total} 个 Key: <span style="color:#4caf50;font-weight:600;">${ok} 可用</span>${fail > 0 ? `, <span style="color:#ff4757;font-weight:600;">${fail} 不可用</span>` : ''}${modelLabel}</span>`;
+                    showTestResult('key-test-progress', `<span style="color:#333;">✅ ${total} 个 Key: <span style="color:#4caf50;font-weight:600;">${ok} 可用</span>${fail > 0 ? `, <span style="color:#ff4757;font-weight:600;">${fail} 不可用</span>` : ''}${modelLabel}</span>`, 30000);
                 } else {
-                    prog.innerHTML = `<span style="color:#ff4757;">✗ ${escapeHtml(data.error || '测试失败')}</span>`;
+                    showTestResult('key-test-progress', `<span style="color:#ff4757;">✗ ${escapeHtml(data.error || '测试失败')}</span>`);
                 }
             } catch(e) {
-                prog.innerHTML = `<span style="color:#ff4757;">✗ ${escapeHtml(e.message)}</span>`;
+                showTestResult('key-test-progress', `<span style="color:#ff4757;">✗ ${escapeHtml(e.message)}</span>`);
             }
 
             btn.disabled = false;
             btn.textContent = '🔍 一键测试所有 Key';
             loadData();
-            setTimeout(() => { prog.style.display = 'none'; }, 5000);
         }
 
         async function deleteKey(id) {
@@ -720,7 +732,7 @@ Model: ${ex.openai.model}</div>
             const workers = Array(Math.min(concurrency, total)).fill().map(() => worker());
             await Promise.all(workers);
 
-            prog.innerHTML = `<span style="color:#333;">✅ 测试完成: ${total} 个模型, <span style="color:#4caf50;font-weight:600;">${ok} 可用</span>${fail > 0 ? `, <span style=\"color:#ff4757;font-weight:600;\">${fail} 不可用</span>` : ''}</span>`;
+            showTestResult('batch-test-progress', `<span style="color:#333;">✅ 测试完成: ${total} 个模型, <span style="color:#4caf50;font-weight:600;">${ok} 可用</span>${fail > 0 ? `, <span style="color:#ff4757;font-weight:600;">${fail} 不可用</span>` : ''}</span>`, 30000);
             btn.disabled = false;
             btn.textContent = '🚀 一键批量测试';
         }
