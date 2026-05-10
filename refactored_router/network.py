@@ -25,6 +25,10 @@ class _PreStreamError(Exception):
     pass
 
 
+class _QuotaExhaustedError(Exception):
+    pass
+
+
 class APIClient:
     def __init__(self):
         self.client = None
@@ -65,14 +69,17 @@ class APIClient:
 
         for h in headers:
             hl = h.lower()
-            if hl == "modelscope-ratelimit-requests-limit":
-                quota["daily_limit"] = int(headers[h])
-            elif hl == "modelscope-ratelimit-requests-remaining":
-                quota["daily_remaining"] = int(headers[h])
-            elif hl == "modelscope-ratelimit-model-requests-limit":
-                quota["model_limit"] = int(headers[h])
-            elif hl == "modelscope-ratelimit-model-requests-remaining":
-                quota["model_remaining"] = int(headers[h])
+            try:
+                if hl == "modelscope-ratelimit-requests-limit":
+                    quota["daily_limit"] = int(headers[h])
+                elif hl == "modelscope-ratelimit-requests-remaining":
+                    quota["daily_remaining"] = int(headers[h])
+                elif hl == "modelscope-ratelimit-model-requests-limit":
+                    quota["model_limit"] = int(headers[h])
+                elif hl == "modelscope-ratelimit-model-requests-remaining":
+                    quota["model_remaining"] = int(headers[h])
+            except (ValueError, TypeError):
+                continue
 
         if quota:
             quota["updated_at"] = time.time()
@@ -785,12 +792,12 @@ class APIClient:
                                     break
                                 
                                 if self.should_try_next_key(quota):
-                                    logger.info(f"  Key {key['name']} 模型额度用完，换 Key")
-                                    await self._mark_key_fatal_failure(key["id"], "模型额度不足")
+                                    logger.info(f"  Key {key['name']} 模型额度低，换 Key")
+                                    await self._mark_key_retryable_failure(key["id"], "模型额度低")
                                     exhausted_keys_for_this_model.add(key["id"])
                                     previous_key_name = key['name']
-                                    model_last_error = "模型额度不足"
-                                    model_retryable = False
+                                    model_last_error = "模型额度低"
+                                    model_retryable = True
                                     break
                                 
                                 if self.is_key_exhausted(key["id"], quota):
@@ -983,7 +990,6 @@ class APIClient:
             raise Exception("没有可用的 API Key")
 
         exhausted_models = set()
-        stream_started = False
 
         while True:
             candidate_models = await self._rank_available_models(category_models, exhausted_models)
@@ -1011,6 +1017,7 @@ class APIClient:
                     for key in candidate_keys:
                         key_made_progress = True
                         await self._mark_key_selected(key["id"])
+                        stream_started = False
 
                         url = f"{config.BASE_URL}/chat/completions"
                         headers_copy = {
@@ -1030,8 +1037,6 @@ class APIClient:
                                     "POST", url, content=json_data,
                                     headers=headers_copy, timeout=timeout
                                 ) as response:
-                                    self._update_quota_from_headers(key["id"], response.headers)
-
                                     if response.status_code == 429:
                                         retry_after = response.headers.get("Retry-After", "60")
                                         raise _PreStreamError(f"上游限流 429，请 {retry_after} 秒后重试")
@@ -1046,7 +1051,7 @@ class APIClient:
                                                 error_msg = error_json["error"].get("message", error_detail)
                                             else:
                                                 error_msg = error_detail
-                                        except:
+                                        except Exception:
                                             error_msg = error_detail
                                         
                                         if response.status_code == 401:
@@ -1059,6 +1064,12 @@ class APIClient:
                                             raise _PreStreamError(f"上游服务错误 {response.status_code}: {error_msg}")
                                         else:
                                             raise _PreStreamError(f"HTTP {response.status_code}: {error_msg}")
+
+                                    quota = self._update_quota_from_headers(key["id"], response.headers)
+                                    if self.should_try_next_key(quota):
+                                        raise _QuotaExhaustedError(f"模型额度不足 (剩余 {quota.get('model_remaining', '?')})")
+                                    if self.is_key_exhausted(key["id"], quota):
+                                        raise _QuotaExhaustedError(f"Key 配额耗尽")
 
                                     stream_started = True
 
@@ -1097,6 +1108,13 @@ class APIClient:
                             status_code = 429 if "429" in str(e) else None
                             await self._mark_key_retryable_failure(key["id"], str(e), status_code=status_code)
                             logger.warning(f"  流式 Key {key['name']} 预流式错误: {e}")
+                            exhausted_keys_for_this_model.add(key["id"])
+                            continue
+                        except _QuotaExhaustedError as e:
+                            model_last_error = str(e)
+                            model_retryable = True
+                            await self._mark_key_fatal_failure(key["id"], str(e))
+                            logger.warning(f"  流式 Key {key['name']} 额度不足: {e}")
                             exhausted_keys_for_this_model.add(key["id"])
                             continue
                         except httpx.TimeoutException as e:

@@ -608,7 +608,27 @@ print(response.choices[0].message.content)""",
                 "base_url": "http://localhost:2166/v1",
                 "api_key": "multi-proxy-2025-2000q",
                 "model": "vision"
-            }
+            },
+            "base64": """import base64
+import os
+
+def image_to_base64_url(image_path):
+    ext = os.path.splitext(image_path)[1].lower()
+    mime_types = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp"
+    }
+    mime_type = mime_types.get(ext, "image/jpeg")
+    with open(image_path, "rb") as image_file:
+        base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+    return f"data:{mime_type};base64,{base64_image}"
+
+# 将本地图片转为 base64 URL，直接填入 url 字段即可
+image_url = image_to_base64_url("1.png")
+
+# 然后在请求中使用：
+# {"type": "image_url", "image_url": {"url": image_url}}"""
         },
         "txt2img": {
             "name": "文生图 (txt2img)",
@@ -689,7 +709,27 @@ print(f\"图片链接 (数组): {response.images[0]}\")""",
                 "api_key": "multi-proxy-2025-2000q",
                 "model": "img2img",
                 "note": "技术实现：采用 ModelScope 异步模式（X-ModelScope-Async-Mode: true），优先处理非空 task_id 并轮询任务状态（最多 120 次，每 2~8 秒一次），如果上游直接返回图片链接也会直接提取并返回，再从 output_images 数组中提取图片链接！"
-            }
+            },
+            "base64": """import base64
+import os
+
+def image_to_base64_url(image_path):
+    ext = os.path.splitext(image_path)[1].lower()
+    mime_types = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp"
+    }
+    mime_type = mime_types.get(ext, "image/jpeg")
+    with open(image_path, "rb") as image_file:
+        base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+    return f"data:{mime_type};base64,{base64_image}"
+
+# 将本地图片转为 base64 URL，直接填入 url 字段即可
+image_url = image_to_base64_url("1.png")
+
+# 然后在请求中使用：
+# {"type": "image_url", "image_url": {"url": image_url}}"""
         }
     }
     return {"examples": examples}
@@ -880,6 +920,8 @@ def _normalize_response(result: dict, requested_model: str) -> dict:
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     is_stream = False
+    requested_model = "unknown"
+    input_content = ""
     client_ip = request.client.host if request.client else "unknown"
     client_port = request.client.port if request.client else "unknown"
     client_addr = f"{client_ip}:{client_port}" if client_port != "unknown" else client_ip
@@ -957,7 +999,7 @@ async def chat_completions(request: Request):
                                     content = delta.get("content", "")
                                     if content:
                                         collected_content.append(content)
-                    except:
+                    except Exception:
                         pass
             except StopAsyncIteration:
                 return JSONResponse(
@@ -1040,8 +1082,8 @@ async def chat_completions(request: Request):
         log_request_detail(
             client_ip=client_addr,
             requested_model=requested_model,
-            actual_model=call_info.get("actual_model", model_name),
-            actual_key_name=call_info.get("actual_key_name", "unknown"),
+            actual_model=call_info.get("actual_model", model_name) if call_info else model_name,
+            actual_key_name=call_info.get("actual_key_name", "unknown") if call_info else "unknown",
             input_content=input_content,
             output_content=output_content,
             status="success"
@@ -1064,10 +1106,10 @@ async def chat_completions(request: Request):
     except Exception as e:
         log_request_detail(
             client_ip=client_addr,
-            requested_model=requested_model if 'requested_model' in dir() else "unknown",
+            requested_model=requested_model,
             actual_model="N/A",
             actual_key_name="N/A",
-            input_content=input_content if 'input_content' in dir() else "",
+            input_content=input_content,
             output_content="",
             status="failed",
             error_msg=str(e)

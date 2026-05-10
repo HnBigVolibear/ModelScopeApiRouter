@@ -932,6 +932,12 @@ Model: ${ex.openai.model}</div>
                         ⚠️ ${ex.openai.note}
                     </div>
                     ` : ''}
+                    
+                    ${ex.base64 ? `
+                    <div style="height:15px;"></div>
+                    <div class="example-label">本地图片转 Base64 示例</div>
+                    <div class="code-block" id="code-base64"><button class="copy-btn" onclick="copyCode('code-base64')">复制</button>${escapeHtml(ex.base64)}</div>
+                    ` : ''}
                 </div>
             `;
             
@@ -973,7 +979,8 @@ Model: ${ex.openai.model}</div>
         async function copyCode(elementId) {
             const codeBlock = document.getElementById(elementId);
             const copyBtn = codeBlock.querySelector('.copy-btn');
-            const codeText = codeBlock.textContent.replace('复制', '').trim();
+            const btnText = copyBtn.textContent;
+            const codeText = codeBlock.textContent.replace(btnText, '').trim();
             
             try {
                 await navigator.clipboard.writeText(codeText);
