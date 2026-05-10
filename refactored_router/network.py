@@ -42,6 +42,24 @@ class APIClient:
         self.key_states: Dict[str, Dict] = {}
         self.model_states: Dict[str, Dict] = {}
     
+    @staticmethod
+    def _normalize_stream_chunk(chunk_data: dict) -> dict:
+        """规范化流式响应 chunk，移除非标准字段"""
+        if not isinstance(chunk_data, dict):
+            return chunk_data
+        
+        choices = chunk_data.get("choices")
+        if isinstance(choices, list):
+            for choice in choices:
+                if not isinstance(choice, dict):
+                    continue
+                delta = choice.get("delta")
+                if isinstance(delta, dict):
+                    if "function_calls" in delta:
+                        del delta["function_calls"]
+        
+        return chunk_data
+    
     def _update_quota_from_headers(self, key_id: str, headers: dict):
         quota = {}
 
@@ -84,6 +102,7 @@ class APIClient:
         return isinstance(value, str) and bool(value.strip())
 
     def _looks_like_image_url(self, value) -> bool:
+        # 这里简单的这样判断，是否合理？后续考虑改进。
         return self._is_non_empty_string(value) and (
             value.startswith("http://") or
             value.startswith("https://") or
@@ -636,7 +655,7 @@ class APIClient:
             logger.warning(f"格式化响应失败: {e}")
             return result if isinstance(result, dict) else {"image_url": image_url, "images": [image_url]}
     
-    async def call_model(self, model_name: str, data: dict, headers: dict, timeout: int) -> Tuple[dict, int, dict]:
+    async def call_model(self, model_name: str, data: dict, headers: dict, timeout: int, client_ip: str = None) -> Tuple[dict, int, dict, dict]:
         target_category = "chat"
         for model in config.MODELS:
             if model.get("name") == model_name:
@@ -682,6 +701,7 @@ class APIClient:
                 model_last_error = None
                 model_retryable = False
 
+                previous_key_name = None
                 while True:
                     candidate_keys = await self._rank_available_keys(all_keys, exhausted_keys_for_this_model)
                     if not candidate_keys:
@@ -694,6 +714,10 @@ class APIClient:
                         request_attempt = 0
                         last_error = None
                         await self._mark_key_selected(key["id"])
+                        
+                        # 打印切换日志
+                        if previous_key_name:
+                            logger.info(f"🔄 Key 切换: {previous_key_name} → {key['name']}")
                         
                         while request_attempt < self.max_request_retries:
                             request_attempt += 1
@@ -737,7 +761,13 @@ class APIClient:
                                         error_text = response.text
                                     except Exception:
                                         error_text = str(response)
-                                    raise RetryableResponseError(f"上游限流 429: {error_text[:300]}")
+                                    logger.warning(f"  Key {key['name']} 被限流 429，立即切换下一个 Key")
+                                    await self._mark_key_retryable_failure(key["id"], f"限流 429: {error_text[:200]}", status_code=429)
+                                    exhausted_keys_for_this_model.add(key["id"])
+                                    previous_key_name = key['name']
+                                    model_last_error = "限流 429"
+                                    model_retryable = True
+                                    break
 
                                 if response.status_code >= 400:
                                     try:
@@ -747,6 +777,7 @@ class APIClient:
                                     logger.warning(f"  Key {key['name']} HTTP {response.status_code} 错误: {error_text[:300]}")
                                     await self._mark_key_fatal_failure(key["id"], f"HTTP {response.status_code}")
                                     exhausted_keys_for_this_model.add(key["id"])
+                                    previous_key_name = key['name']
                                     model_last_error = f"HTTP {response.status_code}"
                                     model_retryable = False
                                     break
@@ -755,6 +786,7 @@ class APIClient:
                                     logger.info(f"  Key {key['name']} 模型额度用完，换 Key")
                                     await self._mark_key_fatal_failure(key["id"], "模型额度不足")
                                     exhausted_keys_for_this_model.add(key["id"])
+                                    previous_key_name = key['name']
                                     model_last_error = "模型额度不足"
                                     model_retryable = False
                                     break
@@ -763,6 +795,7 @@ class APIClient:
                                     logger.info(f"  Key {key['name']} 完全耗尽")
                                     await self._mark_key_fatal_failure(key["id"], "Key 配额耗尽")
                                     exhausted_keys_for_this_model.add(key["id"])
+                                    previous_key_name = key['name']
                                     model_last_error = "Key 配额耗尽"
                                     model_retryable = False
                                     break
@@ -850,7 +883,14 @@ class APIClient:
                                 await self._mark_key_success(key["id"])
                                 await self._mark_model_success(model_id)
                                 logger.info(f"✅ 成功！模型: {model['name']}, Key: {key['name']}")
-                                return result, response.status_code, dict(response.headers)
+                                call_info = {
+                                    "actual_model": model['name'],
+                                    "actual_model_id": model['model_id'],
+                                    "actual_key_name": key['name'],
+                                    "actual_key_id": key['id'],
+                                    "client_ip": client_ip
+                                }
+                                return result, response.status_code, dict(response.headers), call_info
 
                             except RetryableResponseError as e:
                                 last_error = e
@@ -865,6 +905,24 @@ class APIClient:
                                     break
                                 await asyncio.sleep(self._retry_delay(request_attempt, status_code))
                                 continue
+                            except httpx.TimeoutException as e:
+                                last_error = e
+                                model_last_error = "请求超时"
+                                model_retryable = True
+                                await self._mark_key_retryable_failure(key["id"], "请求超时", status_code=None)
+                                logger.warning(f"  Key {key['name']} 请求超时，立即切换下一个 Key")
+                                exhausted_keys_for_this_model.add(key["id"])
+                                previous_key_name = key['name']
+                                break
+                            except httpx.NetworkError as e:
+                                last_error = e
+                                model_last_error = f"网络错误: {str(e)}"
+                                model_retryable = True
+                                await self._mark_key_retryable_failure(key["id"], str(e), status_code=None)
+                                logger.warning(f"  Key {key['name']} 网络错误，立即切换下一个 Key: {e}")
+                                exhausted_keys_for_this_model.add(key["id"])
+                                previous_key_name = key['name']
+                                break
                             except Exception as e:
                                 last_error = e
                                 model_last_error = str(e)
@@ -872,6 +930,7 @@ class APIClient:
                                 await self._mark_key_fatal_failure(key["id"], str(e))
                                 logger.error(f"  Key {key['name']} 调用异常: {e}")
                                 exhausted_keys_for_this_model.add(key["id"])
+                                previous_key_name = key['name']
                                 break
 
                         if last_error and request_attempt >= self.max_request_retries:
@@ -902,7 +961,7 @@ class APIClient:
         
         raise Exception("所有模型和 Key 都调用失败，请检查配置")
 
-    async def call_model_stream(self, model_name: str, data: dict, headers: dict, timeout: int):
+    async def call_model_stream(self, model_name: str, data: dict, headers: dict, timeout: int, client_ip: str = None):
         target_category = "chat"
         for model in config.MODELS:
             if model.get("name") == model_name:
@@ -972,11 +1031,32 @@ class APIClient:
                                     self._update_quota_from_headers(key["id"], response.headers)
 
                                     if response.status_code == 429:
-                                        raise _PreStreamError("上游限流 429")
+                                        retry_after = response.headers.get("Retry-After", "60")
+                                        raise _PreStreamError(f"上游限流 429，请 {retry_after} 秒后重试")
 
                                     if response.status_code >= 400:
                                         body_text = await response.aread()
-                                        raise _PreStreamError(f"HTTP {response.status_code}: {body_text.decode('utf-8', errors='replace')[:200]}")
+                                        error_detail = body_text.decode('utf-8', errors='replace')[:500]
+                                        
+                                        try:
+                                            error_json = json.loads(error_detail)
+                                            if isinstance(error_json, dict) and "error" in error_json:
+                                                error_msg = error_json["error"].get("message", error_detail)
+                                            else:
+                                                error_msg = error_detail
+                                        except:
+                                            error_msg = error_detail
+                                        
+                                        if response.status_code == 401:
+                                            raise _PreStreamError(f"API Key 无效或已过期: {error_msg}")
+                                        elif response.status_code == 402:
+                                            raise _PreStreamError(f"API Key 额度不足: {error_msg}")
+                                        elif response.status_code == 404:
+                                            raise _PreStreamError(f"模型不存在或不可用: {error_msg}")
+                                        elif response.status_code >= 500:
+                                            raise _PreStreamError(f"上游服务错误 {response.status_code}: {error_msg}")
+                                        else:
+                                            raise _PreStreamError(f"HTTP {response.status_code}: {error_msg}")
 
                                     stream_started = True
 
@@ -999,6 +1079,7 @@ class APIClient:
                                         try:
                                             chunk_data = json.loads(payload)
                                             chunk_data["model"] = model_name
+                                            chunk_data = self._normalize_stream_chunk(chunk_data)
                                             yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
                                         except json.JSONDecodeError:
                                             yield f"data: {payload}\n\n"
@@ -1016,10 +1097,54 @@ class APIClient:
                             logger.warning(f"  流式 Key {key['name']} 预流式错误: {e}")
                             exhausted_keys_for_this_model.add(key["id"])
                             continue
+                        except httpx.TimeoutException as e:
+                            if stream_started:
+                                logger.error(f"  流式传输超时: {e}")
+                                error_obj = {
+                                    "error": {
+                                        "message": "请求超时，请稍后重试",
+                                        "type": "timeout_error",
+                                        "code": "stream_timeout"
+                                    }
+                                }
+                                yield f"data: {json.dumps(error_obj, ensure_ascii=False)}\n\n"
+                                yield "data: [DONE]\n\n"
+                                return
+                            model_last_error = "请求超时"
+                            model_retryable = True
+                            await self._mark_key_retryable_failure(key["id"], "请求超时", status_code=None)
+                            logger.error(f"  流式 Key {key['name']} 请求超时")
+                            exhausted_keys_for_this_model.add(key["id"])
+                            continue
+                        except httpx.NetworkError as e:
+                            if stream_started:
+                                logger.error(f"  流式传输网络错误: {e}")
+                                error_obj = {
+                                    "error": {
+                                        "message": "网络连接失败，请检查网络",
+                                        "type": "network_error",
+                                        "code": "stream_network_error"
+                                    }
+                                }
+                                yield f"data: {json.dumps(error_obj, ensure_ascii=False)}\n\n"
+                                yield "data: [DONE]\n\n"
+                                return
+                            model_last_error = f"网络错误: {str(e)}"
+                            model_retryable = True
+                            await self._mark_key_retryable_failure(key["id"], str(e), status_code=None)
+                            logger.error(f"  流式 Key {key['name']} 网络错误: {e}")
+                            exhausted_keys_for_this_model.add(key["id"])
+                            continue
                         except Exception as e:
                             if stream_started:
-                                logger.error(f"  流式传输中途异常: {e}")
-                                error_obj = {"error": {"message": str(e), "type": "server_error"}}
+                                logger.error(f"  流式传输中途异常: {e}", exc_info=True)
+                                error_obj = {
+                                    "error": {
+                                        "message": f"流式传输错误: {str(e)}",
+                                        "type": "stream_error",
+                                        "code": "stream_internal_error"
+                                    }
+                                }
                                 yield f"data: {json.dumps(error_obj, ensure_ascii=False)}\n\n"
                                 yield "data: [DONE]\n\n"
                                 return

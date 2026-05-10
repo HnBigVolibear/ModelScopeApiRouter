@@ -5,6 +5,8 @@ import time
 import json
 import asyncio
 import socket
+import logging
+from datetime import datetime
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -44,6 +46,106 @@ except AttributeError:
 
 from settings import config
 from network import api_client
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+def truncate_text(text: str, max_len: int = 500) -> str:
+    if not text:
+        return ""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "..."
+
+def extract_messages_content(messages: list) -> str:
+    if not messages:
+        return ""
+    content_parts = []
+    for msg in messages:
+        role = msg.get("role", "unknown")
+        if role == "system":
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            content_parts.append(f"[{role}]: {content}")
+        elif isinstance(content, list):
+            text_parts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text_parts.append(item.get("text", ""))
+                elif isinstance(item, str):
+                    text_parts.append(item)
+            if text_parts:
+                content_parts.append(f"[{role}]: {' '.join(text_parts)}")
+    return "\n".join(content_parts)
+
+def extract_response_content(result: dict) -> str:
+    if not isinstance(result, dict):
+        return ""
+    choices = result.get("choices", [])
+    if not choices:
+        return ""
+    content_parts = []
+    for choice in choices:
+        message = choice.get("message", {})
+        content = message.get("content", "")
+        if content:
+            content_parts.append(content)
+        reasoning = message.get("reasoning_content", "")
+        if reasoning:
+            content_parts.append(f"[推理过程]: {reasoning}")
+        tool_calls = message.get("tool_calls", [])
+        if tool_calls:
+            for tc in tool_calls:
+                func = tc.get("function", {})
+                name = func.get("name", "unknown")
+                args = func.get("arguments", "")
+                content_parts.append(f"[工具调用]: {name}({args})")
+    return "\n".join(content_parts)
+
+def log_request_detail(
+    client_ip: str,
+    requested_model: str,
+    actual_model: str,
+    actual_key_name: str,
+    input_content: str,
+    output_content: str,
+    status: str = "success",
+    error_msg: str = None
+):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    separator = "=" * 80
+    
+    log_lines = [
+        separator,
+        f"📋 请求日志 [{timestamp}]",
+        separator,
+        f"🌐 客户端 IP: {client_ip}",
+        f"🎯 请求模型: {requested_model}",
+        f"🤖 实际模型: {actual_model}",
+        f"🔑 使用 Key: {actual_key_name}",
+        f"📊 状态: {status}",
+        "-" * 40,
+        f"📥 输入内容 (前500字符):",
+        truncate_text(input_content, 500),
+        "-" * 40,
+    ]
+    
+    if status == "success":
+        log_lines.extend([
+            f"📤 输出内容 (前500字符):",
+            truncate_text(output_content, 500),
+        ])
+    else:
+        log_lines.append(f"❌ 错误信息: {error_msg}")
+    
+    log_lines.append(separator)
+    
+    logger.info("\n" + "\n".join(log_lines))
 
 
 class AddKeyRequest(BaseModel):
@@ -370,8 +472,7 @@ async def test_model(model_id: str):
                         resp = await client.post(url, content=_json.dumps(test_data), headers=headers, timeout=20)
                         if resp.status_code == 429:
                             last_error = f"[{key['name']}] 被限流(429)"
-                            await _asyncio.sleep(2)
-                            continue
+                            break
                         if resp.status_code >= 400:
                             last_error = f"[{key['name']}] HTTP {resp.status_code}"
                             break  # 非限流 4xx/5xx 不重试，换 key
@@ -384,10 +485,9 @@ async def test_model(model_id: str):
                             return {"success": True, "task_id": task_id, "model": target_model["model_id"], "key_name": key["name"]}
                         if result.get("image_url") or result.get("choices"):
                             return {"success": True, "model": target_model["model_id"], "key_name": key["name"]}
-                        # 空壳响应，重试
                         last_error = f"[{key['name']}] 返回空响应(choices=null)"
                         if attempt < max_retries - 1:
-                            await _asyncio.sleep(1)
+                            await _asyncio.sleep(0.5)
                         continue
                 else:
                     url = f"{config.BASE_URL}/chat/completions"
@@ -403,8 +503,7 @@ async def test_model(model_id: str):
                         resp = await client.post(url, content=_json.dumps(test_data), headers=headers, timeout=20)
                         if resp.status_code == 429:
                             last_error = f"[{key['name']}] 被限流(429)"
-                            await _asyncio.sleep(2)
-                            continue
+                            break
                         if resp.status_code >= 400:
                             last_error = f"[{key['name']}] HTTP {resp.status_code}"
                             break
@@ -415,16 +514,15 @@ async def test_model(model_id: str):
                             content = msg.get("content", "")
                             if content and content.strip():
                                 return {"success": True, "model": target_model["model_id"], "content": content[:80], "key_name": key["name"]}
-                        # 空壳响应，重试
                         last_error = f"[{key['name']}] 返回空响应(choices=null)"
                         if attempt < max_retries - 1:
-                            await _asyncio.sleep(1)
+                            await _asyncio.sleep(0.5)
                         continue
 
             except Exception as e:
                 last_error = f"[{key['name']}] {e}"
                 if attempt < max_retries - 1:
-                    await _asyncio.sleep(1)
+                    await _asyncio.sleep(0.5)
                     continue
                 break  # 这个 key 的网络/超时异常，换 key
 
@@ -591,7 +689,7 @@ print(f\"图片链接 (数组): {response.images[0]}\")""",
             }
         }
     }
-    return examples
+    return {"examples": examples}
 
 
 async def _sse_stream(result: dict, model_name: str, chunk_size: int = 2, include_usage: bool = False):
@@ -779,6 +877,10 @@ def _normalize_response(result: dict, requested_model: str) -> dict:
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     is_stream = False
+    client_ip = request.client.host if request.client else "unknown"
+    client_port = request.client.port if request.client else "unknown"
+    client_addr = f"{client_ip}:{client_port}" if client_port != "unknown" else client_ip
+    
     try:
         body = await request.json()
         requested_model = body.get("model", "chat")
@@ -793,7 +895,6 @@ async def chat_completions(request: Request):
         else:
             body.pop("stream", None)
 
-        # 基础请求验证
         if "messages" not in body or not isinstance(body.get("messages"), list) or len(body["messages"]) == 0:
             return JSONResponse(
                 content={
@@ -829,13 +930,32 @@ async def chat_completions(request: Request):
         headers = dict(request.headers)
         headers.pop("Authorization", None)
 
-        # 图片生成类请求需要更长超时（异步轮询最多 80×3=240秒）
         call_timeout = 180
+        
+        input_content = extract_messages_content(body.get("messages", []))
 
         if is_stream:
-            stream_gen = api_client.call_model_stream(model_name, body, headers, timeout=call_timeout)
+            stream_gen = api_client.call_model_stream(model_name, body, headers, timeout=call_timeout, client_ip=client_addr)
+            
+            collected_content = []
+            
             try:
                 first_chunk = await stream_gen.__anext__()
+                if first_chunk:
+                    try:
+                        first_chunk_str = first_chunk.decode('utf-8') if isinstance(first_chunk, bytes) else first_chunk
+                        if first_chunk_str.startswith("data:"):
+                            chunk_data_str = first_chunk_str[5:].strip()
+                            if chunk_data_str and chunk_data_str != "[DONE]":
+                                chunk_data = json.loads(chunk_data_str)
+                                choices = chunk_data.get("choices", [])
+                                for choice in choices:
+                                    delta = choice.get("delta", {})
+                                    content = delta.get("content", "")
+                                    if content:
+                                        collected_content.append(content)
+                    except:
+                        pass
             except StopAsyncIteration:
                 return JSONResponse(
                     content={"error": {"message": "流式响应异常", "type": "server_error", "code": "internal_error"}},
@@ -843,9 +963,59 @@ async def chat_completions(request: Request):
                 )
 
             async def _combined_stream():
-                yield first_chunk
-                async for chunk in stream_gen:
-                    yield chunk
+                error_occurred = False
+                try:
+                    yield first_chunk
+                    async for chunk in stream_gen:
+                        try:
+                            chunk_str = chunk.decode('utf-8') if isinstance(chunk, bytes) else chunk
+                            if chunk_str.startswith("data:"):
+                                chunk_data_str = chunk_str[5:].strip()
+                                if chunk_data_str and chunk_data_str != "[DONE]":
+                                    chunk_data = json.loads(chunk_data_str)
+                                    choices = chunk_data.get("choices", [])
+                                    for choice in choices:
+                                        delta = choice.get("delta", {})
+                                        content = delta.get("content", "")
+                                        if content:
+                                            collected_content.append(content)
+                        except Exception as e:
+                            logger.warning(f"处理流式 chunk 失败: {e}")
+                        yield chunk
+                    
+                    output_content = "".join(collected_content)
+                    logger.info(
+                        f"\n{'='*80}\n"
+                        f"📋 流式请求完成\n"
+                        f"{'='*80}\n"
+                        f"🌐 客户端: {client_addr}\n"
+                        f"🎯 请求模型: {requested_model}\n"
+                        f"📥 输入内容 (前500字符):\n{truncate_text(input_content, 500)}\n"
+                        f"{'-'*40}\n"
+                        f"📤 输出内容 (前500字符):\n{truncate_text(output_content, 500)}\n"
+                        f"{'='*80}"
+                    )
+                    
+                except asyncio.CancelledError:
+                    error_occurred = True
+                    logger.warning(f"客户端断开连接: {client_addr}")
+                    raise
+                    
+                except Exception as e:
+                    error_occurred = True
+                    logger.error(f"流式传输错误: {e}", exc_info=True)
+                    error_chunk = json.dumps({
+                        "error": {
+                            "message": f"流式传输错误: {str(e)}",
+                            "type": "stream_error",
+                            "code": "stream_internal_error"
+                        }
+                    }, ensure_ascii=False)
+                    yield f"data: {error_chunk}\n\n"
+                    
+                finally:
+                    if not error_occurred:
+                        yield "data: [DONE]\n\n"
 
             return StreamingResponse(
                 _combined_stream(),
@@ -856,11 +1026,23 @@ async def chat_completions(request: Request):
                 }
             )
 
-        result, status, resp_headers = await api_client.call_model(
-            model_name, body, headers, timeout=call_timeout
+        result, status, resp_headers, call_info = await api_client.call_model(
+            model_name, body, headers, timeout=call_timeout, client_ip=client_addr
         )
 
         normalized = _normalize_response(result, requested_model)
+        
+        output_content = extract_response_content(result)
+        
+        log_request_detail(
+            client_ip=client_addr,
+            requested_model=requested_model,
+            actual_model=call_info.get("actual_model", model_name),
+            actual_key_name=call_info.get("actual_key_name", "unknown"),
+            input_content=input_content,
+            output_content=output_content,
+            status="success"
+        )
 
         safe_response_headers = {
             k: v for k, v in resp_headers.items()
@@ -877,13 +1059,23 @@ async def chat_completions(request: Request):
         return JSONResponse(content=normalized, status_code=status, headers=safe_response_headers)
 
     except Exception as e:
+        log_request_detail(
+            client_ip=client_addr,
+            requested_model=requested_model if 'requested_model' in dir() else "unknown",
+            actual_model="N/A",
+            actual_key_name="N/A",
+            input_content=input_content if 'input_content' in dir() else "",
+            output_content="",
+            status="failed",
+            error_msg=str(e)
+        )
+        
         if is_stream:
             return StreamingResponse(
                 _sse_error_stream(str(e)),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache"}
             )
-        # OpenAI 标准错误格式
         error_type = "server_error"
         error_code = "internal_error"
         status_code = 500
