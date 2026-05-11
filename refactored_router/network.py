@@ -29,6 +29,10 @@ class _QuotaExhaustedError(Exception):
     pass
 
 
+class ImageTaskFailedError(Exception):
+    pass
+
+
 class APIClient:
     def __init__(self):
         self.client = None
@@ -114,6 +118,42 @@ class APIClient:
             value.startswith("https://") or
             value.startswith("data:image")
         )
+
+    def _message_has_image(self, messages) -> bool:
+        if not isinstance(messages, list):
+            return False
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "image_url":
+                    return True
+        return False
+
+    def _resolve_target_category(self, model_name: str, data: dict) -> str:
+        explicit_category = data.get("_router_category") if isinstance(data, dict) else None
+        if explicit_category in {"chat", "vision", "txt2img", "img2img"}:
+            return explicit_category
+
+        matches = [model for model in config.MODELS if model.get("name") == model_name or model.get("model_id") == model_name]
+        if not matches:
+            return "chat"
+        if len(matches) == 1:
+            return matches[0].get("category", "chat")
+
+        categories = {model.get("category", "chat") for model in matches}
+        messages = data.get("messages", []) if isinstance(data, dict) else []
+        if self._message_has_image(messages) and "vision" in categories:
+            return "vision"
+        if "chat" in categories:
+            return "chat"
+        for category in ("vision", "txt2img", "img2img"):
+            if category in categories:
+                return category
+        return matches[0].get("category", "chat")
 
     def _extract_text_content(self, result: dict) -> Optional[str]:
         if not isinstance(result, dict):
@@ -577,39 +617,44 @@ class APIClient:
     def _convert_openai_to_modelscope(self, data: dict, target_category: str) -> dict:
         try:
             modelscope_data = {}
-            
-            if "messages" in data and len(data["messages"]) > 0:
-                last_message = data["messages"][-1]
-                if isinstance(last_message, dict):
-                    content = last_message.get("content", "")
-                else:
-                    content = ""
-                
-                if isinstance(content, str):
-                    modelscope_data["prompt"] = content
-                elif isinstance(content, list):
-                    text_parts = []
-                    image_urls = []
-                    
-                    for item in content:
-                        if not isinstance(item, dict):
-                            continue
-                        if item.get("type") == "text":
-                            text_parts.append(item.get("text", ""))
-                        elif item.get("type") == "image_url":
-                            image_obj = item.get("image_url", {})
-                            if isinstance(image_obj, dict):
-                                img_url = image_obj.get("url", "")
-                            else:
-                                img_url = ""
-                            if img_url:
-                                image_urls.append(img_url)
-                    
-                    if text_parts:
-                        modelscope_data["prompt"] = " ".join(text_parts)
-                    
-                    if image_urls and target_category == "img2img":
-                        modelscope_data["image_url"] = image_urls[0]
+            text_parts = []
+            image_urls = []
+            messages = data.get("messages", [])
+
+            if isinstance(messages, list):
+                for message in messages:
+                    if not isinstance(message, dict):
+                        continue
+                    content = message.get("content", "")
+
+                    if isinstance(content, str):
+                        stripped = content.strip()
+                        if stripped:
+                            text_parts.append(stripped)
+                    elif isinstance(content, list):
+                        for item in content:
+                            if not isinstance(item, dict):
+                                continue
+                            if item.get("type") == "text":
+                                text = item.get("text", "")
+                                if isinstance(text, str) and text.strip():
+                                    text_parts.append(text.strip())
+                            elif item.get("type") == "image_url":
+                                image_obj = item.get("image_url", {})
+                                if isinstance(image_obj, dict):
+                                    img_url = image_obj.get("url", "")
+                                elif isinstance(image_obj, str):
+                                    img_url = image_obj
+                                else:
+                                    img_url = ""
+                                if img_url:
+                                    image_urls.append(img_url)
+
+            if text_parts:
+                modelscope_data["prompt"] = " ".join(text_parts)
+
+            if image_urls and target_category == "img2img":
+                modelscope_data["image_url"] = image_urls[-1]
             
             for key in ["width", "height", "size", "n", "quality"]:
                 if key in data:
@@ -662,11 +707,7 @@ class APIClient:
             return result if isinstance(result, dict) else {"image_url": image_url, "images": [image_url]}
     
     async def call_model(self, model_name: str, data: dict, headers: dict, timeout: int, client_ip: str = None) -> Tuple[dict, int, dict, dict]:
-        target_category = "chat"
-        for model in config.MODELS:
-            if model.get("name") == model_name:
-                target_category = model.get("category", "chat")
-                break
+        target_category = self._resolve_target_category(model_name, data)
         
         if target_category == "img2img":
             valid, error_msg = self._validate_image_size(data)
@@ -688,7 +729,7 @@ class APIClient:
         exhausted_models = set()
 
         # 图片生成类请求耗时较长，限制最多尝试 3 个模型
-        max_image_model_attempts = 3 if target_category in ("text2img", "img2img") else len(category_models)
+        max_image_model_attempts = 3 if target_category in ("txt2img", "img2img") else len(category_models)
         model_attempt_count = 0
 
         while True:
@@ -729,7 +770,7 @@ class APIClient:
                             request_attempt += 1
                             
                             try:
-                                if target_category in ["text2img", "img2img"]:
+                                if target_category in ["txt2img", "img2img"]:
                                     url = f"{config.BASE_URL}/images/generations"
                                     headers_copy = {
                                         "Content-Type": "application/json",
@@ -745,7 +786,7 @@ class APIClient:
                                 
                                 request_data = data.copy()
                                 
-                                if target_category in ["text2img", "img2img"]:
+                                if target_category in ["txt2img", "img2img"]:
                                     request_data = self._convert_openai_to_modelscope(request_data, target_category)
                                 
                                 request_data["model"] = model["model_id"]
@@ -814,7 +855,7 @@ class APIClient:
                                 if target_category in ["chat", "vision"] and self._is_empty_text_response(result):
                                     raise RetryableResponseError("文本/视觉响应为空壳，切换下一个 Key 或模型重试")
 
-                                if target_category in ["text2img", "img2img"]:
+                                if target_category in ["txt2img", "img2img"]:
                                     task_id = result.get("task_id")
                                     if self._is_non_empty_string(task_id):
                                         logger.info(f"  异步任务已提交，task_id: {task_id}")
@@ -863,7 +904,7 @@ class APIClient:
                                             if task_status == "FAILED":
                                                 task_completed = True
                                                 logger.error(f"任务失败: {task_result}")
-                                                raise Exception(f"任务失败: {task_result.get('error_message', '未知错误')}")
+                                                raise ImageTaskFailedError(f"任务失败: {task_result.get('error_message', '未知错误')}")
                                             if task_status in ["PENDING", "PROCESSING"]:
                                                 continue
                                             if self._is_empty_shell_response(task_result):
@@ -932,6 +973,15 @@ class APIClient:
                                 exhausted_keys_for_this_model.add(key["id"])
                                 previous_key_name = key['name']
                                 break
+                            except ImageTaskFailedError as e:
+                                last_error = e
+                                model_last_error = str(e)
+                                model_retryable = True
+                                await self._mark_key_retryable_failure(key["id"], str(e), status_code=None)
+                                logger.warning(f"  图片任务失败但不判定 Key 失效，切换下一个 Key 或模型重试: {e}")
+                                exhausted_keys_for_this_model.add(key["id"])
+                                previous_key_name = key['name']
+                                break
                             except Exception as e:
                                 last_error = e
                                 model_last_error = str(e)
@@ -971,13 +1021,9 @@ class APIClient:
         raise Exception("所有模型和 Key 都调用失败，请检查配置")
 
     async def call_model_stream(self, model_name: str, data: dict, headers: dict, timeout: int, client_ip: str = None):
-        target_category = "chat"
-        for model in config.MODELS:
-            if model.get("name") == model_name:
-                target_category = model.get("category", "chat")
-                break
+        target_category = self._resolve_target_category(model_name, data)
 
-        if target_category in ("text2img", "img2img"):
+        if target_category in ("txt2img", "img2img"):
             raise Exception("图片生成模型不支持流式调用，请使用非流式请求")
 
         models_by_category = config.get_models_by_category()
@@ -1032,75 +1078,76 @@ class APIClient:
                         json_data = json.dumps(request_data)
 
                         try:
-                            async with httpx.AsyncClient() as client:
-                                async with client.stream(
-                                    "POST", url, content=json_data,
-                                    headers=headers_copy, timeout=timeout
-                                ) as response:
-                                    if response.status_code == 429:
-                                        retry_after = response.headers.get("Retry-After", "60")
-                                        raise _PreStreamError(f"上游限流 429，请 {retry_after} 秒后重试")
+                            async with self.upstream_semaphore:
+                                async with httpx.AsyncClient() as client:
+                                    async with client.stream(
+                                        "POST", url, content=json_data,
+                                        headers=headers_copy, timeout=timeout
+                                    ) as response:
+                                        if response.status_code == 429:
+                                            retry_after = response.headers.get("Retry-After", "60")
+                                            raise _PreStreamError(f"上游限流 429，请 {retry_after} 秒后重试")
 
-                                    if response.status_code >= 400:
-                                        body_text = await response.aread()
-                                        error_detail = body_text.decode('utf-8', errors='replace')[:500]
-                                        
-                                        try:
-                                            error_json = json.loads(error_detail)
-                                            if isinstance(error_json, dict) and "error" in error_json:
-                                                error_msg = error_json["error"].get("message", error_detail)
-                                            else:
+                                        if response.status_code >= 400:
+                                            body_text = await response.aread()
+                                            error_detail = body_text.decode('utf-8', errors='replace')[:500]
+                                            
+                                            try:
+                                                error_json = json.loads(error_detail)
+                                                if isinstance(error_json, dict) and "error" in error_json:
+                                                    error_msg = error_json["error"].get("message", error_detail)
+                                                else:
+                                                    error_msg = error_detail
+                                            except Exception:
                                                 error_msg = error_detail
-                                        except Exception:
-                                            error_msg = error_detail
-                                        
-                                        if response.status_code == 401:
-                                            raise _PreStreamError(f"API Key 无效或已过期: {error_msg}")
-                                        elif response.status_code == 402:
-                                            raise _PreStreamError(f"API Key 额度不足: {error_msg}")
-                                        elif response.status_code == 404:
-                                            raise _PreStreamError(f"模型不存在或不可用: {error_msg}")
-                                        elif response.status_code >= 500:
-                                            raise _PreStreamError(f"上游服务错误 {response.status_code}: {error_msg}")
-                                        else:
-                                            raise _PreStreamError(f"HTTP {response.status_code}: {error_msg}")
+                                            
+                                            if response.status_code == 401:
+                                                raise _PreStreamError(f"API Key 无效或已过期: {error_msg}")
+                                            elif response.status_code == 402:
+                                                raise _PreStreamError(f"API Key 额度不足: {error_msg}")
+                                            elif response.status_code == 404:
+                                                raise _PreStreamError(f"模型不存在或不可用: {error_msg}")
+                                            elif response.status_code >= 500:
+                                                raise _PreStreamError(f"上游服务错误 {response.status_code}: {error_msg}")
+                                            else:
+                                                raise _PreStreamError(f"HTTP {response.status_code}: {error_msg}")
 
-                                    quota = self._update_quota_from_headers(key["id"], response.headers)
-                                    if self.should_try_next_key(quota):
-                                        raise _QuotaExhaustedError(f"模型额度不足 (剩余 {quota.get('model_remaining', '?')})")
-                                    if self.is_key_exhausted(key["id"], quota):
-                                        raise _QuotaExhaustedError(f"Key 配额耗尽")
+                                        quota = self._update_quota_from_headers(key["id"], response.headers)
+                                        if self.should_try_next_key(quota):
+                                            raise _QuotaExhaustedError(f"模型额度不足 (剩余 {quota.get('model_remaining', '?')})")
+                                        if self.is_key_exhausted(key["id"], quota):
+                                            raise _QuotaExhaustedError(f"Key 配额耗尽")
 
-                                    stream_started = True
+                                        stream_started = True
 
-                                    async for line in response.aiter_lines():
-                                        line = line.strip()
-                                        if not line:
-                                            continue
-                                        if not line.startswith("data:"):
-                                            continue
+                                        async for line in response.aiter_lines():
+                                            line = line.strip()
+                                            if not line:
+                                                continue
+                                            if not line.startswith("data:"):
+                                                continue
 
-                                        payload = line[5:].strip()
+                                            payload = line[5:].strip()
 
-                                        if payload == "[DONE]":
-                                            yield "data: [DONE]\n\n"
-                                            await self._mark_key_success(key["id"])
-                                            await self._mark_model_success(model_id)
-                                            logger.info(f"✅ 流式完成！模型: {model['name']}, Key: {key['name']}")
-                                            return
+                                            if payload == "[DONE]":
+                                                yield "data: [DONE]\n\n"
+                                                await self._mark_key_success(key["id"])
+                                                await self._mark_model_success(model_id)
+                                                logger.info(f"✅ 流式完成！模型: {model['name']}, Key: {key['name']}")
+                                                return
 
-                                        try:
-                                            chunk_data = json.loads(payload)
-                                            chunk_data["model"] = model_name
-                                            chunk_data = self._normalize_stream_chunk(chunk_data)
-                                            yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
-                                        except json.JSONDecodeError:
-                                            yield f"data: {payload}\n\n"
+                                            try:
+                                                chunk_data = json.loads(payload)
+                                                chunk_data["model"] = model_name
+                                                chunk_data = self._normalize_stream_chunk(chunk_data)
+                                                yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+                                            except json.JSONDecodeError:
+                                                yield f"data: {payload}\n\n"
 
-                                    await self._mark_key_success(key["id"])
-                                    await self._mark_model_success(model_id)
-                                    yield "data: [DONE]\n\n"
-                                    return
+                                        await self._mark_key_success(key["id"])
+                                        await self._mark_model_success(model_id)
+                                        yield "data: [DONE]\n\n"
+                                        return
 
                         except _PreStreamError as e:
                             model_last_error = str(e)
