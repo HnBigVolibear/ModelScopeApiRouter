@@ -92,7 +92,7 @@
                 -2px -2px 6px rgba(255, 255, 255, 0.1);
         }
         .btn-secondary {
-            background: rgba(255, 255, 255, 0.15);
+            background: #e8e8e8;
             color: #333;
             padding: 6px 12px;
             font-size: 0.8rem;
@@ -102,7 +102,7 @@
         }
         .btn-secondary:hover {
             transform: translateY(-1px);
-            background: rgba(255, 255, 255, 0.25);
+            background: #d8d8d8;
         }
         .btn-link {
             background: linear-gradient(135deg, #36CFD1 0%, #2DB5B7 100%);
@@ -233,9 +233,96 @@
         .tab-content.active { display: block; }
         
         .code-block {
-            background: #1e1e1e; color: #d4d4d4; padding: 15px;
-            border-radius: 8px; overflow-x: auto; font-family: 'Consolas', monospace;
-            font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap;
+            position: relative;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: #e8f4f8;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            box-shadow: 
+                0 4px 12px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+        .code-block.light-theme {
+            background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+            color: #1565c0;
+            border: 2px solid #90caf9;
+            box-shadow: 0 2px 8px rgba(33, 150, 243, 0.15);
+        }
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 6px 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            opacity: 0.9;
+            z-index: 10;
+            box-shadow: 
+                0 2px 8px rgba(102, 126, 234, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+        .copy-btn:hover {
+            background: linear-gradient(135deg, #7c8df0 0%, #8b5fb8 100%);
+            opacity: 1;
+            transform: translateY(-1px);
+            box-shadow: 
+                0 4px 12px rgba(102, 126, 234, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        }
+        .copy-btn.copied {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            box-shadow: 
+                0 2px 8px rgba(72, 187, 120, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+        .light-theme .copy-btn {
+            background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 
+                0 2px 8px rgba(21, 101, 192, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+        .light-theme .copy-btn:hover {
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            box-shadow: 
+                0 4px 12px rgba(21, 101, 192, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        }
+        .theme-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(102, 126, 234, 0.1);
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            color: #667eea;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .theme-toggle:hover {
+            background: rgba(102, 126, 234, 0.2);
+            transform: translateY(-1px);
+        }
+        .theme-toggle.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: transparent;
         }
         .example-section { margin-bottom: 20px; }
         .example-label {
@@ -439,9 +526,9 @@
         </div>
 
         <div class="tabs">
-            <button class="tab active" onclick="showTab('keys')">🔑 API Keys</button>
-            <button class="tab" onclick="showTab('models')">🤖 模型管理</button>
-            <button class="tab" onclick="showTab('examples')">📚 调用说明</button>
+            <button class="tab active" onclick="showTab('keys', event)">🔑 API Keys</button>
+            <button class="tab" onclick="showTab('models', event)">🤖 模型管理</button>
+            <button class="tab" onclick="showTab('examples', event)">📚 调用说明</button>
         </div>
 
         <div id="tab-keys" class="tab-content active">
@@ -472,7 +559,7 @@
                     </select>
                     <button class="btn btn-secondary" id="batch-key-test-btn" onclick="batchTestKeys()" style="flex-shrink:0;">🔍 一键测试所有 Key</button>
                 </div>
-                <div style="font-size:0.75rem;color:#999;margin-top:4px;">选择模型可查看该模型的配额，留空则使用默认第一个 chat 模型</div>
+                <div style="font-size:0.75rem;color:#999;margin-top:4px;">选择模型可查看该模型的配额；额度测试接口使用 chat/completions，所以下拉框仅提供对话和视觉理解模型</div>
                 <span id="key-test-progress" style="display:none;margin-top:6px;font-size:0.85rem;"></span>
             </div>
 
@@ -497,7 +584,7 @@
                         <select id="model-category">
                             <option value="chat">对话</option>
                             <option value="vision">视觉理解</option>
-                            <option value="text2img">文生图</option>
+                            <option value="txt2img">文生图</option>
                             <option value="img2img">图生图</option>
                         </select>
                     </div>
@@ -526,7 +613,7 @@
                             <option value="all">全部</option>
                             <option value="chat">对话</option>
                             <option value="vision">视觉理解</option>
-                            <option value="text2img">文生图</option>
+                            <option value="txt2img">文生图</option>
                             <option value="img2img">图生图</option>
                         </select>
                     </div>
@@ -550,7 +637,7 @@
                         <li><strong>Model 参数：</strong>4 选 1：<code>chat</code> / <code>txt2img</code> / <code>img2img</code> / <code>vision</code></li>
                     </ul>
                 </div>
-                <div class="form-row" style="margin-bottom: 20px;">
+                <div class="form-row" style="margin-bottom: 20px; align-items: flex-end;">
                     <div class="form-group" style="max-width: 300px;">
                         <label>选择类型</label>
                         <select id="example-category" onchange="loadExamples()">
@@ -560,6 +647,10 @@
                             <option value="img2img">图生图 (img2img)</option>
                         </select>
                     </div>
+                    <button class="theme-toggle" id="theme-toggle-btn" onclick="toggleCodeTheme()">
+                        <span id="theme-icon">🌙</span>
+                        <span id="theme-text">切换浅色</span>
+                    </button>
                 </div>
                 <div id="examples-content"></div>
             </div>
@@ -569,13 +660,25 @@
     <script>
         let categories = {};
         let examples = {};
-        let defaultTestModel = { id: '', name: '' };  // 存储默认测试模型
+        let defaultTestModel = { id: '', name: '' };
+        let lastModelsByCategory = {};
+        let isModelBatchTesting = false;
+        let isKeyBatchTesting = false;
+        let loadDataTimer = null;
         
-        function showTab(tabName) {
+        function showTab(tabName, evt) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            event.target.classList.add('active');
-            document.getElementById('tab-' + tabName).classList.add('active');
+            const tabContent = document.getElementById('tab-' + tabName);
+            if (!tabContent) return;
+            if (evt && evt.currentTarget) {
+                evt.currentTarget.classList.add('active');
+            } else {
+                const tabs = { keys: 0, models: 1, examples: 2 };
+                const tab = document.querySelectorAll('.tab')[tabs[tabName] || 0];
+                if (tab) tab.classList.add('active');
+            }
+            tabContent.classList.add('active');
             
             if (tabName === 'examples') {
                 loadExamples();
@@ -584,11 +687,60 @@
         
         function escapeHtml(text) {
             const div = document.createElement('div');
-            div.textContent = text;
+            div.textContent = text == null ? '' : String(text);
             return div.innerHTML;
+        }
+
+        function jsString(value) {
+            return JSON.stringify(value == null ? '' : String(value));
+        }
+
+        function escapeAttr(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/`/g, '&#96;');
+        }
+
+        function jsAttr(value) {
+            return escapeAttr(jsString(value));
+        }
+
+        function formatApiError(data, fallback) {
+            if (!data) return fallback || '请求失败';
+            return data.error || data.detail || fallback || '请求失败';
+        }
+
+        async function parseApiResponse(res) {
+            const text = await res.text();
+            let data = {};
+            if (text) {
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    data = { error: text };
+                }
+            }
+            if (!res.ok || data.success === false) {
+                throw new Error(formatApiError(data, `HTTP ${res.status}`));
+            }
+            return data;
+        }
+
+        function toFiniteNumber(value, fallback = 0) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : fallback;
+        }
+
+        function clampPercent(value) {
+            return Math.max(0, Math.min(100, toFiniteNumber(value, 0)));
         }
         
         function maskKey(key) {
+            key = key == null ? '' : String(key);
             if (key.length <= 8) return key;
             return key.substring(0, 4) + '...' + key.substring(key.length - 4);
         }
@@ -596,18 +748,22 @@
         async function loadData() {
             try {
                 const keysRes = await fetch('/api/keys');
-                const keysData = await keysRes.json();
-                renderKeys(keysData.keys);
+                const keysData = await parseApiResponse(keysRes);
+                const keys = Array.isArray(keysData.keys) ? keysData.keys : [];
+                renderKeys(keys);
                 
                 const modelsRes = await fetch('/api/models');
-                const modelsData = await modelsRes.json();
-                categories = modelsData.categories;
-                renderModels(modelsData.models_by_category);
-                renderTestModelSelect(modelsData.models);
+                const modelsData = await parseApiResponse(modelsRes);
+                const models = Array.isArray(modelsData.models) ? modelsData.models : [];
+                categories = modelsData.categories || {};
+                renderModels(modelsData.models_by_category || {});
+                renderTestModelSelect(models);
                 
-                document.getElementById('key-count').textContent = `API Keys: ${keysData.keys.length}`;
-                document.getElementById('model-count').textContent = `模型数: ${modelsData.models.length}`;
+                document.getElementById('key-count').textContent = `API Keys: ${keys.length}`;
+                document.getElementById('model-count').textContent = `模型数: ${models.length}`;
             } catch (e) {
+                document.getElementById('key-count').textContent = 'API Keys: 加载失败';
+                document.getElementById('model-count').textContent = '模型数: 加载失败';
                 console.error(e);
             }
         }
@@ -618,10 +774,8 @@
             
             select.innerHTML = '<option value="">默认第一个 chat 模型</option>';
             
-            // 按 order 字段排序
-            const sortedModels = [...models].sort((a, b) => (a.order || 0) - (b.order || 0));
+            const sortedModels = Array.isArray(models) ? [...models].sort((a, b) => (a.order || 0) - (b.order || 0)) : [];
             
-            // 按分类分组
             const groupedModels = {};
             sortedModels.forEach(model => {
                 const category = model.category || 'chat';
@@ -631,7 +785,6 @@
                 groupedModels[category].push(model);
             });
             
-            // 设置默认测试模型（chat 类里 order 最小的）
             if (groupedModels['chat'] && groupedModels['chat'].length > 0) {
                 defaultTestModel = {
                     id: groupedModels['chat'][0].model_id,
@@ -641,13 +794,10 @@
                 defaultTestModel = { id: '', name: '默认模型' };
             }
             
-            // 按分类顺序添加选项
-            const categoryOrder = ['chat', 'vision', 'text2img', 'img2img'];
+            const categoryOrder = ['chat', 'vision'];
             const categoryNames = {
                 'chat': '对话',
-                'vision': '视觉理解',
-                'text2img': '文生图',
-                'img2img': '图生图'
+                'vision': '视觉理解'
             };
             
             categoryOrder.forEach(category => {
@@ -673,6 +823,7 @@
         
         function renderKeys(keys) {
             const list = document.getElementById('key-list');
+            keys = Array.isArray(keys) ? keys : [];
             if (keys.length === 0) {
                 list.innerHTML = '<li class="empty-state">还没有添加 API Key</li>';
                 return;
@@ -681,25 +832,25 @@
             list.innerHTML = keys.map(key => {
                 let quotaHtml = '';
                 if (key.quota) {
-                    const dailyRemaining = key.quota.daily_remaining || 0;
-                    const dailyLimit = key.quota.daily_limit || 1;
-                    const dailyUsed = dailyLimit - dailyRemaining;
-                    const dailyPercent = ((dailyUsed / dailyLimit) * 100).toFixed(1);
-                    const modelRemaining = key.quota.model_remaining;
-                    const modelLimit = key.quota.model_limit;
+                    const dailyRemaining = Math.max(0, toFiniteNumber(key.quota.daily_remaining, 0));
+                    const dailyLimit = Math.max(1, toFiniteNumber(key.quota.daily_limit, 1));
+                    const dailyUsed = Math.max(0, dailyLimit - dailyRemaining);
+                    const dailyPercent = clampPercent((dailyUsed / dailyLimit) * 100).toFixed(1);
+                    const modelRemaining = Math.max(0, toFiniteNumber(key.quota.model_remaining, 0));
+                    const modelLimit = toFiniteNumber(key.quota.model_limit, 0);
 
                     quotaHtml = `
                         <div class="key-quota-grid">
                             <div class="key-quota-item">
                                 <span class="key-quota-label">日配额</span>
-                                <span class="key-quota-num">${dailyUsed} / ${dailyLimit}</span>
+                                <span class="key-quota-num">${escapeHtml(dailyUsed)} / ${escapeHtml(dailyLimit)}</span>
                                 <div class="quota-bar"><div class="quota-fill" style="width:${dailyPercent}%"></div></div>
                             </div>
-                            ${modelLimit ? `
+                            ${modelLimit > 0 ? `
                             <div class="key-quota-item">
                                 <span class="key-quota-label">模型配额 (该模型)</span>
-                                <span class="key-quota-num">${modelLimit - modelRemaining} / ${modelLimit}<span style="font-weight:normal;color:#999;font-size:0.75rem;"> (剩${modelRemaining})</span></span>
-                                <div class="quota-bar"><div class="quota-fill" style="width:${(((modelLimit - modelRemaining) / modelLimit) * 100).toFixed(1)}%"></div></div>
+                                <span class="key-quota-num">${escapeHtml(Math.max(0, modelLimit - modelRemaining))} / ${escapeHtml(modelLimit)}<span style="font-weight:normal;color:#999;font-size:0.75rem;"> (剩${escapeHtml(modelRemaining)})</span></span>
+                                <div class="quota-bar"><div class="quota-fill" style="width:${clampPercent(((modelLimit - modelRemaining) / modelLimit) * 100).toFixed(1)}%"></div></div>
                             </div>
                             ` : ''}
                         </div>
@@ -711,32 +862,32 @@
                     <li class="key-item">
                         <div class="key-info">
                             <div class="key-name">${escapeHtml(key.name)}</div>
-                            <div class="key-meta">${maskKey(key.key)}</div>
+                            <div class="key-meta">${escapeHtml(maskKey(key.key))}</div>
                             ${quotaHtml}
                         </div>
                         <div class="key-actions">
-                            <button class="btn-test" onclick="testSingleKey('${key.id}')" title="测试额度">🔍 测试</button>
-                            <button class="btn btn-danger" onclick="deleteKey('${key.id}')">删除</button>
+                            <button class="btn-test" onclick="testSingleKey(${jsAttr(key.id)})" title="测试额度">🔍 测试</button>
+                            <button class="btn btn-danger" onclick="deleteKey(${jsAttr(key.id)})">删除</button>
                         </div>
                     </li>
                 `;
             }).join('');
         }
         
-        let modelTestResults = {};  // 存储测试结果，key 为 model.id 或 model.name
+        let modelTestResults = {};
 
         function getModelTestKey(model) {
-            return model.id || model.name;
+            return model.id || model.model_id || model.name;
         }
 
         function renderModels(modelsByCategory) {
-            lastModelsByCategory = modelsByCategory;
+            lastModelsByCategory = modelsByCategory || {};
             const list = document.getElementById('model-list');
             const filterCat = document.getElementById('filter-category').value;
             let html = '';
 
             for (const [catId, catName] of Object.entries(categories)) {
-                const models = modelsByCategory[catId] || [];
+                const models = lastModelsByCategory[catId] || [];
                 if (models.length === 0) continue;
                 if (filterCat !== 'all' && filterCat !== catId) continue;
 
@@ -775,10 +926,10 @@
                                         ${testMsgHtml}
                                     </div>
                                     <div class="model-actions">
-                                        <button class="btn-test" id="test-btn-${testKey}" onclick="testModel('${testKey}')" ${testResult === 'loading' ? 'disabled' : ''}>${testResult === 'loading' ? '测试中...' : '🔍 测试'}</button>
-                                        <button class="btn btn-secondary btn-icon" onclick="moveModel('${model.id}', 'up')" title="上移">↑</button>
-                                        <button class="btn btn-secondary btn-icon" onclick="moveModel('${model.id}', 'down')" title="下移">↓</button>
-                                        <button class="btn btn-danger btn-small" onclick="deleteModel('${model.id}')">删除</button>
+                                        <button class="btn-test" id="test-btn-${escapeAttr(testKey)}" onclick="testModel(${jsAttr(testKey)})" ${testResult === 'loading' ? 'disabled' : ''}>${testResult === 'loading' ? '测试中...' : '🔍 测试'}</button>
+                                        <button class="btn btn-secondary btn-icon" onclick="moveModel(${jsAttr(model.id)}, 'up')" title="上移">↑</button>
+                                        <button class="btn btn-secondary btn-icon" onclick="moveModel(${jsAttr(model.id)}, 'down')" title="下移">↓</button>
+                                        <button class="btn btn-danger btn-small" onclick="deleteModel(${jsAttr(model.id)}, ${jsAttr(catId)})">删除</button>
                                     </div>
                                 </li>
                             `;
@@ -798,10 +949,12 @@
         async function loadExamples() {
             try {
                 const res = await fetch('/api/examples');
-                const data = await res.json();
-                examples = data.examples;
+                const data = await parseApiResponse(res);
+                examples = data.examples || {};
                 renderExamples();
             } catch (e) {
+                const container = document.getElementById('examples-content');
+                container.innerHTML = `<div class="empty-state">示例加载失败：${escapeHtml(e.message)}</div>`;
                 console.error(e);
             }
         }
@@ -818,31 +971,108 @@
             
             container.innerHTML = `
                 <div class="example-section">
-                    <p style="color:#555;margin-bottom:15px;">${ex.description}</p>
+                    <p style="color:#555;margin-bottom:15px;">${escapeHtml(ex.description)}</p>
                     
                     <div class="example-label">cURL</div>
-                    <div class="code-block">${escapeHtml(ex.curl)}</div>
+                    <div class="code-block" id="code-curl"><button class="copy-btn" onclick="copyCode('code-curl')">复制</button>${escapeHtml(ex.curl)}</div>
                     
                     <div style="height:15px;"></div>
                     
                     <div class="example-label">Python (OpenAI SDK)</div>
-                    <div class="code-block">${escapeHtml(ex.python)}</div>
+                    <div class="code-block" id="code-python"><button class="copy-btn" onclick="copyCode('code-python')">复制</button>${escapeHtml(ex.python)}</div>
                     
                     ${ex.openai && !ex.openai.note ? `
                     <div style="height:15px;"></div>
                     <div class="example-label">OpenAI 配置</div>
-                    <div class="code-block">Base URL: ${ex.openai.base_url}
-API Key: ${ex.openai.api_key}
-Model: ${ex.openai.model}</div>
+                    <div class="code-block" id="code-openai"><button class="copy-btn" onclick="copyCode('code-openai')">复制</button>Base URL: ${escapeHtml(ex.openai.base_url)}
+API Key: ${escapeHtml(ex.openai.api_key)}
+Model: ${escapeHtml(ex.openai.model)}</div>
                     ` : ''}
                     
                     ${ex.openai && ex.openai.note ? `
                     <div style="margin-top:15px;padding:12px;background:#fff3cd;border-radius:8px;color:#856404;">
-                        ⚠️ ${ex.openai.note}
+                        ⚠️ ${escapeHtml(ex.openai.note)}
                     </div>
+                    ` : ''}
+                    
+                    ${ex.base64 ? `
+                    <div style="height:15px;"></div>
+                    <div class="example-label">本地图片转 Base64 示例</div>
+                    <div class="code-block" id="code-base64"><button class="copy-btn" onclick="copyCode('code-base64')">复制</button>${escapeHtml(ex.base64)}</div>
                     ` : ''}
                 </div>
             `;
+            
+            applyCurrentTheme();
+        }
+        
+        let isLightTheme = false;
+        
+        function toggleCodeTheme() {
+            isLightTheme = !isLightTheme;
+            const btn = document.getElementById('theme-toggle-btn');
+            const icon = document.getElementById('theme-icon');
+            const text = document.getElementById('theme-text');
+            
+            if (isLightTheme) {
+                btn.classList.add('active');
+                icon.textContent = '☀️';
+                text.textContent = '切换深色';
+            } else {
+                btn.classList.remove('active');
+                icon.textContent = '🌙';
+                text.textContent = '切换浅色';
+            }
+            
+            applyCurrentTheme();
+        }
+        
+        function applyCurrentTheme() {
+            const codeBlocks = document.querySelectorAll('.code-block');
+            codeBlocks.forEach(block => {
+                if (isLightTheme) {
+                    block.classList.add('light-theme');
+                } else {
+                    block.classList.remove('light-theme');
+                }
+            });
+        }
+        
+        async function copyCode(elementId) {
+            const codeBlock = document.getElementById(elementId);
+            if (!codeBlock) return;
+            const copyBtn = codeBlock.querySelector('.copy-btn');
+            if (!copyBtn) return;
+            const codeClone = codeBlock.cloneNode(true);
+            const cloneBtn = codeClone.querySelector('.copy-btn');
+            if (cloneBtn) cloneBtn.remove();
+            const codeText = codeClone.textContent.trim();
+            
+            try {
+                await navigator.clipboard.writeText(codeText);
+                copyBtn.textContent = '已复制';
+                copyBtn.classList.add('copied');
+                
+                setTimeout(() => {
+                    copyBtn.textContent = '复制';
+                    copyBtn.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                const textArea = document.createElement('textarea');
+                textArea.value = codeText;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                copyBtn.textContent = '已复制';
+                copyBtn.classList.add('copied');
+                
+                setTimeout(() => {
+                    copyBtn.textContent = '复制';
+                    copyBtn.classList.remove('copied');
+                }, 2000);
+            }
         }
         
         function showInputError(inputId, errorDivId, message) {
@@ -851,7 +1081,8 @@ Model: ${ex.openai.model}</div>
             
             if (!input.value.trim()) {
                 input.classList.add('shake', 'input-error');
-                errorDiv.textContent = message;
+                const existing = errorDiv.textContent;
+                errorDiv.textContent = existing ? existing + '；' + message : message;
                 errorDiv.style.display = 'block';
                 
                 setTimeout(() => {
@@ -871,6 +1102,7 @@ Model: ${ex.openai.model}</div>
             const input = document.getElementById(inputId);
             const errorDiv = document.getElementById(errorDivId);
             input.classList.remove('input-error');
+            errorDiv.textContent = '';
             errorDiv.style.display = 'none';
         }
         
@@ -890,8 +1122,8 @@ Model: ${ex.openai.model}</div>
             
             if (hasError) return;
             
-            const name = nameInput.value;
-            const key = keyInput.value;
+            const name = nameInput.value.trim();
+            const key = keyInput.value.trim();
             
             try {
                 const res = await fetch('/api/keys', {
@@ -899,73 +1131,84 @@ Model: ${ex.openai.model}</div>
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, key })
                 });
-                if (res.ok) {
-                    document.getElementById('key-name').value = '';
-                    document.getElementById('key-value').value = '';
-                    hideInputError('key-name', 'key-add-error');
-                    hideInputError('key-value', 'key-add-error');
-                    loadData();
-                }
+                await parseApiResponse(res);
+                document.getElementById('key-name').value = '';
+                document.getElementById('key-value').value = '';
+                hideInputError('key-name', 'key-add-error');
+                hideInputError('key-value', 'key-add-error');
+                errorDiv.style.display = 'none';
+                loadData();
             } catch (e) {
-                console.error(e);
+                errorDiv.textContent = e.message || '添加失败';
+                errorDiv.style.display = 'block';
             }
         }
 
-        // ========== Key 额度测试 ==========
-
         function showTestResult(progId, html, autoHideMs = 20000) {
             const prog = document.getElementById(progId);
+            if (!prog) return;
             prog.style.display = 'block';
-            prog.innerHTML = html + ' <button onclick="hideTestResult(\'' + progId + '\')" style="margin-left:10px;background:none;border:1px solid #ccc;border-radius:3px;cursor:pointer;padding:2px 6px;font-size:12px;color:#666;">✕ 关闭</button>';
+            prog.innerHTML = html + ' <button onclick="hideTestResult(\'' + escapeAttr(progId) + '\')" style="margin-left:10px;background:none;border:1px solid #ccc;border-radius:3px;cursor:pointer;padding:2px 6px;font-size:12px;color:#666;">✕ 关闭</button>';
             if (autoHideMs > 0) {
-                setTimeout(() => { prog.style.display = 'none'; }, autoHideMs);
+                setTimeout(() => { if (prog) prog.style.display = 'none'; }, autoHideMs);
             }
         }
 
         function hideTestResult(progId) {
             const prog = document.getElementById(progId);
-            prog.style.display = 'none';
+            if (prog) prog.style.display = 'none';
+        }
+
+        function formatQuotaDetails(quota) {
+            if (!quota) return '未返回额度信息';
+            const parts = [];
+            if (quota.daily_limit != null && quota.daily_remaining != null) {
+                parts.push(`日配额：剩余 ${escapeHtml(quota.daily_remaining)} / ${escapeHtml(quota.daily_limit)}`);
+            }
+            if (quota.model_limit != null && quota.model_remaining != null) {
+                parts.push(`模型配额：剩余 ${escapeHtml(quota.model_remaining)} / ${escapeHtml(quota.model_limit)}`);
+            }
+            return parts.length ? parts.join('；') : '未返回额度信息';
         }
 
         async function testSingleKey(keyId) {
             const prog = document.getElementById('key-test-progress');
             const modelInput = document.getElementById('quota-test-model');
+            const testBtn = document.querySelector(`.key-actions .btn-test[onclick*="${keyId}"]`);
             const modelValue = modelInput.value.trim();
             const model = modelValue || '';
             
-            // 获取实际测试的模型名称
             let modelName = '';
             if (modelValue) {
                 const selectedOption = modelInput.options[modelInput.selectedIndex];
                 modelName = selectedOption ? selectedOption.text : modelValue;
             } else {
-                // 使用默认测试模型
                 modelName = defaultTestModel.name || '默认模型';
             }
             
-            // 禁用下拉框
             modelInput.disabled = true;
+            if (testBtn) { testBtn.disabled = true; testBtn.textContent = '⏳ 测试中...'; }
             
             prog.style.display = 'block';
             prog.innerHTML = `<span style="color:#667eea;">⏳ 测试中... (模型: ${escapeHtml(modelName)})</span>`;
             try {
                 const body = { model };
-                const res = await fetch(`/api/keys/${keyId}/test`, {
+                const res = await fetch(`/api/keys/${encodeURIComponent(keyId)}/test`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
-                const data = await res.json();
+                const data = await parseApiResponse(res);
                 if (data.success) {
-                    showTestResult('key-test-progress', '<span style="color:#4caf50;">✓ 测试完成</span>');
+                    showTestResult('key-test-progress', `<span style="color:#4caf50;">✓ 测试完成</span> <span style="color:#555;">${formatQuotaDetails(data.quota)}</span>`);
                 } else {
                     showTestResult('key-test-progress', `<span style="color:#ff4757;">✗ ${escapeHtml(data.error || '失败')}</span>`);
                 }
             } catch(e) {
                 showTestResult('key-test-progress', `<span style="color:#ff4757;">✗ ${escapeHtml(e.message)}</span>`);
             } finally {
-                // 恢复下拉框
                 modelInput.disabled = false;
+                if (testBtn) { testBtn.disabled = false; testBtn.textContent = '🔍 测试'; }
             }
             loadData();
         }
@@ -977,23 +1220,20 @@ Model: ${ex.openai.model}</div>
             const modelValue = modelInput.value.trim();
             const model = modelValue || '';
             
-            // 获取实际测试的模型名称
             let modelName = '';
             if (modelValue) {
                 const selectedOption = modelInput.options[modelInput.selectedIndex];
                 modelName = selectedOption ? selectedOption.text : modelValue;
             } else {
-                // 使用默认测试模型
                 modelName = defaultTestModel.name || '默认模型';
             }
             
-            // 禁用下拉框、按钮和所有单个测试按钮
             modelInput.disabled = true;
+            isKeyBatchTesting = true;
             btn.disabled = true;
             btn.textContent = '⏳ 测试中...';
             
-            // 禁用所有单个 Key 的测试按钮
-            document.querySelectorAll('.btn-test').forEach(b => b.disabled = true);
+            document.querySelectorAll('.key-actions .btn-test').forEach(b => b.disabled = true);
             
             prog.style.display = 'block';
             prog.innerHTML = `<span style="color:#667eea;">⏳ 并发测试所有 Key... (模型: ${escapeHtml(modelName)})</span>`;
@@ -1005,7 +1245,7 @@ Model: ${ex.openai.model}</div>
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
-                const data = await res.json();
+                const data = await parseApiResponse(res);
                 if (data.success) {
                     const { total, ok, fail } = data;
                     showTestResult('key-test-progress', `<span style="color:#333;">✅ ${total} 个 Key: <span style="color:#4caf50;font-weight:600;">${ok} 可用</span>${fail > 0 ? `, <span style="color:#ff4757;font-weight:600;">${fail} 不可用</span>` : ''} (模型: ${escapeHtml(modelName)})</span>`, 30000);
@@ -1015,11 +1255,11 @@ Model: ${ex.openai.model}</div>
             } catch(e) {
                 showTestResult('key-test-progress', `<span style="color:#ff4757;">✗ ${escapeHtml(e.message)}</span>`);
             } finally {
-                // 恢复下拉框、按钮和所有单个测试按钮
+                isKeyBatchTesting = false;
                 modelInput.disabled = false;
                 btn.disabled = false;
                 btn.textContent = '🔍 一键测试所有 Key';
-                document.querySelectorAll('.btn-test').forEach(b => b.disabled = false);
+                document.querySelectorAll('.key-actions .btn-test').forEach(b => b.disabled = false);
             }
 
             loadData();
@@ -1028,10 +1268,11 @@ Model: ${ex.openai.model}</div>
         async function deleteKey(id) {
             if (!confirm('确定删除这个 API Key？')) return;
             try {
-                await fetch(`/api/keys/${id}`, { method: 'DELETE' });
+                const res = await fetch(`/api/keys/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                await parseApiResponse(res);
                 loadData();
             } catch (e) {
-                console.error(e);
+                alert(e.message || '删除 Key 失败');
             }
         }
         
@@ -1051,8 +1292,8 @@ Model: ${ex.openai.model}</div>
             
             if (hasError) return;
             
-            const name = nameInput.value;
-            const modelId = modelIdInput.value;
+            const name = nameInput.value.trim();
+            const modelId = modelIdInput.value.trim();
             const category = document.getElementById('model-category').value;
             
             try {
@@ -1061,53 +1302,58 @@ Model: ${ex.openai.model}</div>
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, model_id: modelId, category })
                 });
-                if (res.ok) {
-                    document.getElementById('model-name').value = '';
-                    document.getElementById('model-id').value = '';
-                    hideInputError('model-name', 'model-add-error');
-                    hideInputError('model-id', 'model-add-error');
-                    loadData();
-                }
+                await parseApiResponse(res);
+                document.getElementById('model-name').value = '';
+                document.getElementById('model-id').value = '';
+                hideInputError('model-name', 'model-add-error');
+                hideInputError('model-id', 'model-add-error');
+                errorDiv.style.display = 'none';
+                loadData();
             } catch (e) {
-                console.error(e);
+                errorDiv.textContent = e.message || '添加失败';
+                errorDiv.style.display = 'block';
             }
         }
         
-        async function deleteModel(id) {
+        async function deleteModel(id, category) {
             if (!confirm('确定删除这个模型？')) return;
             try {
-                await fetch(`/api/models/${id}`, { method: 'DELETE' });
+                const res = await fetch(`/api/models/${encodeURIComponent(id)}?category=${encodeURIComponent(category)}`, { method: 'DELETE' });
+                await parseApiResponse(res);
                 loadData();
             } catch (e) {
-                console.error(e);
+                alert(e.message || '删除模型失败');
             }
         }
         
         async function moveModel(id, direction) {
             try {
-                const res = await fetch(`/api/models/${id}/move`, {
+                const res = await fetch(`/api/models/${encodeURIComponent(id)}/move`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ direction })
                 });
-                if (res.ok) {
-                    loadData();
-                }
+                await parseApiResponse(res);
+                loadData();
             } catch (e) {
-                console.error(e);
+                alert(e.message || '移动模型失败');
             }
         }
         
         loadData();
-        setInterval(loadData, 15000);
+        loadDataTimer = setInterval(() => {
+            if (!isModelBatchTesting && !isKeyBatchTesting) {
+                loadData();
+            }
+        }, 15000);
 
         async function testModel(modelKey) {
             modelTestResults[modelKey] = 'loading';
             loadData();
 
             try {
-                const res = await fetch(`/api/models/${modelKey}/test`, { method: 'POST' });
-                const data = await res.json();
+                const res = await fetch(`/api/models/${encodeURIComponent(modelKey)}/test`, { method: 'POST' });
+                const data = await parseApiResponse(res);
                 modelTestResults[modelKey] = { ok: data.success, error: data.error, content: data.content };
             } catch (e) {
                 modelTestResults[modelKey] = { ok: false, error: e.message || '网络错误' };
@@ -1120,7 +1366,7 @@ Model: ${ex.openai.model}</div>
             const prog = document.getElementById('batch-test-progress');
 
             const allModels = [];
-            for (const [cat, models] of Object.entries(lastModelsByCategory || {})) {
+            for (const models of Object.values(lastModelsByCategory || {})) {
                 for (const m of models) allModels.push(m);
             }
 
@@ -1129,13 +1375,14 @@ Model: ${ex.openai.model}</div>
                 return;
             }
 
+            isModelBatchTesting = true;
             btn.disabled = true;
             btn.textContent = '⏳ 测试中...';
             prog.style.display = 'block';
 
             let done = 0, ok = 0, fail = 0;
             const total = allModels.length;
-            const concurrency = 5;  // 5 个并发
+            const concurrency = 5;
 
             async function testOne(model) {
                 const key = getModelTestKey(model);
@@ -1143,10 +1390,10 @@ Model: ${ex.openai.model}</div>
                 loadData();
 
                 try {
-                    const res = await fetch(`/api/models/${key}/test`, { method: 'POST' });
-                    const data = await res.json();
+                    const res = await fetch(`/api/models/${encodeURIComponent(key)}/test`, { method: 'POST' });
+                    const data = await parseApiResponse(res);
                     modelTestResults[key] = { ok: data.success, error: data.error, content: data.content };
-                    if (data.success) ok++; else fail++;
+                    ok++;
                 } catch (e) {
                     modelTestResults[key] = { ok: false, error: e.message || '网络错误' };
                     fail++;
@@ -1156,7 +1403,6 @@ Model: ${ex.openai.model}</div>
                 loadData();
             }
 
-            // 并发控制：一次最多 concurrency 个
             const queue = [...allModels];
             async function worker() {
                 while (queue.length > 0) {
@@ -1165,16 +1411,19 @@ Model: ${ex.openai.model}</div>
                 }
             }
 
-            const workers = Array(Math.min(concurrency, total)).fill().map(() => worker());
-            await Promise.all(workers);
-
-            showTestResult('batch-test-progress', `<span style="color:#333;">✅ 测试完成: ${total} 个模型, <span style="color:#4caf50;font-weight:600;">${ok} 可用</span>${fail > 0 ? `, <span style="color:#ff4757;font-weight:600;">${fail} 不可用</span>` : ''}</span>`, 30000);
-            btn.disabled = false;
-            btn.textContent = '🚀 一键批量测试';
+            try {
+                const workers = Array(Math.min(concurrency, total)).fill().map(() => worker());
+                await Promise.all(workers);
+                showTestResult('batch-test-progress', `<span style="color:#333;">✅ 测试完成: ${total} 个模型, <span style="color:#4caf50;font-weight:600;">${ok} 可用</span>${fail > 0 ? `, <span style="color:#ff4757;font-weight:600;">${fail} 不可用</span>` : ''}</span>`, 30000);
+            } catch (e) {
+                showTestResult('batch-test-progress', `<span style="color:#ff4757;">✗ ${escapeHtml(e.message || '批量测试失败')}</span>`, 30000);
+            } finally {
+                isModelBatchTesting = false;
+                btn.disabled = false;
+                btn.textContent = '🚀 一键批量测试';
+                loadData();
+            }
         }
-
-        // 保存最近一次 modelsByCategory 供批量测试使用
-        let lastModelsByCategory = {};
     </script>
     
     <button class="back-to-top" onclick="scrollToTop()" aria-label="回到顶部">
@@ -1189,6 +1438,7 @@ Model: ${ex.openai.model}</div>
         const backToTop = document.querySelector('.back-to-top');
         
         window.addEventListener('scroll', () => {
+            if (!helpLinks || !githubCorner || !backToTop) return;
             const scrollY = window.scrollY || document.documentElement.scrollTop;
             const hideThreshold = 200;
             
